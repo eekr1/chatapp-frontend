@@ -1,191 +1,34 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 
-// Basit UUID üreteci (MVP için)
-const generateUUID = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
-
-// Client ID Management
-const getClientId = () => {
-  let id = localStorage.getItem('anon_client_id');
+// Persistent Device ID
+const getDeviceId = () => {
+  let id = localStorage.getItem('anon_device_id');
   if (!id) {
-    id = generateUUID();
-    localStorage.setItem('anon_client_id', id);
+    // Simple random ID, enough for MVP functionality
+    id = 'dev-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now().toString(36);
+    localStorage.setItem('anon_device_id', id);
   }
   return id;
 };
 
+const DEVICE_ID = getDeviceId();
+
 function App() {
-  const [status, setStatus] = useState('disconnected'); // disconnected, connecting, queued, matched
-  const [messages, setMessages] = useState([]); // { from: 'me'|'peer', text: string }
-  const [inputText, setInputText] = useState('');
-  const [error, setError] = useState(null);
-  const [reportModalOpen, setReportModalOpen] = useState(false);
-  const [reportReason, setReportReason] = useState('');
-
-  const ws = useRef(null);
-  const clientId = useRef(getClientId());
-  const messagesEndRef = useRef(null);
-
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const connect = useCallback(() => {
-    if (ws.current) return;
-
-    setStatus('connecting');
-    const socket = new WebSocket('ws://localhost:3000'); // Env variable later: import.meta.env.VITE_WS_URL
-    ws.current = socket;
-
-    socket.onopen = () => {
-      console.log('Connected');
-      // Bağlandığında hemen bir şey yapmıyoruz, kullanıcı "Start"a basınca joinQueue yapacak.
-      // Ancak bizim akışta "Start" -> "Connect & Join" daha mantıklı.
-      // Şimdilik connected ise ve status 'connecting' ise joinQueue atmıyoruz, UI'dan bekliyoruz.
-      setStatus('idle');
-    };
-
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log('Received:', data);
-
-      switch (data.type) {
-        case 'queued':
-          setStatus('queued');
-          setMessages([]);
-          setError(null);
-          break;
-        case 'matched':
-          setStatus('matched');
-          setMessages([]); // Yeni eşleşme, temiz sayfa (isteğe bağlı, önceki konuşma silinmeli)
-          setError(null);
-          break;
-        case 'message':
-          setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
-          break;
-        case 'ended':
-          // Eğer "Next" yaptıysak zaten queued'a geçeceğiz, ama peer left ise buraya düşeriz.
-          // veya biz leave yaptık.
-          // data.reason kontrol edilebilir.
-          if (status !== 'queued') { // Eğer sıraya zaten girmediysek
-            setStatus('ended');
-            setError(data.reason === 'disconnect' ? 'Partner bağlantısı koptu.' : 'Konuşma sonlandı.');
-          }
-          break;
-        case 'error':
-          // Code: BANNED, RATE_LIMIT vs.
-          setError(`Hata: ${data.message}`);
-          if (data.code === 'BANNED') {
-            setStatus('banned');
-          }
-          break;
-        default:
-          break;
-      }
-    };
-
-    socket.onclose = () => {
-      console.log('Disconnected');
-      setStatus('disconnected');
-      ws.current = null;
-    };
-
-    socket.onerror = (err) => {
-      console.error('WS Error', err);
-      setError('Bağlantı hatası.');
-      setStatus('disconnected'); // veya error state
-    };
-
-  }, [status]);
-
-  // İlk açılışta bağlanmayı deneme (Opsiyonel, kullanıcı Start'a basınca da olabilir)
-  useEffect(() => {
-    connect();
-    return () => {
-      ws.current?.close();
-    };
-  }, []);
-
-  const handleStart = () => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-      connect();
-      // Connect async olduğu için onopen'i beklemek lazım, ama basitlik adına:
-      // Reconnect logic lazım. Şimdilik connect() useEffect'te çağrılıyor.
-      // Eğer koptuysa tekrar çağır.
-      return;
-    }
-
-    ws.current.send(JSON.stringify({ type: 'joinQueue', clientId: clientId.current }));
-  };
-
-  const handleNext = () => {
-    if (ws.current) {
-      ws.current.send(JSON.stringify({ type: 'next' }));
-      // Optimistic UI update
-      setStatus('queued');
-      setMessages([]);
-    }
-  };
-
-  const handleLeave = () => {
-    if (ws.current) {
-      ws.current.send(JSON.stringify({ type: 'leave' }));
-      setStatus('idle');
-    }
-  };
-
-  const handleSend = (e) => {
-    e.preventDefault();
-    if (!inputText.trim() || status !== 'matched') return;
-
-    // Optimistic update
-    setMessages(prev => [...prev, { from: 'me', text: inputText }]);
-
-    ws.current.send(JSON.stringify({
-      type: 'message',
-      roomId: 'ignored_by_client_logic_handled_in_backend', // Backend validate ediyor ama biz state'de tutmuyoruz roomId'yi (gerekirse tutarız)
-      // Düzeltme: Backend message eventinde roomId istiyor mu?
-      // Backend: `if (roomId !== data.roomId)` kontrolü yapıyor.
-      // O zaman roomId'yi matched eventinden alıp saklamalıyız.
-      // Hızlı fix: Backend'de roomId check opsiyonel veya client'a roomId saklatmalıyız.
-      // Plan'da client roomId saklasın demiştik. O zaman state'e ekleyelim.
-      // Şimdilik roomId'yi 'unknown' atarsak backend hata verir.
-      // Geri dönüp roomId statini ekleyeyim mi? 
-      // Evet, roomId state'e eklenmeli.
-      // Kodun akışını bozmadan roomId state ekliyorum.
-      text: inputText
-    }));
-    // Not: Aşağıda roomId'yi state'e ekleyeceğim ve burayı güncelleyeceğim.
-    setInputText('');
-  };
-
-  // State for Room ID to send correct messages
-  const [currentRoomId, setCurrentRoomId] = useState(null);
-
-  // Update onmessage handled above for matched/message
-  // I need to intercept the handlers to setRoomId.
-  // ... refactoring handleSend logic inside the component render or distinct function?
-  // I will restart the implementation of App function cleanly below in the final file content.
-
-  /* ... */
-}
-
-export default function AppClean() {
-  const [status, setStatus] = useState('disconnected'); // disconnected, connecting, idle, queued, matched, ended, banned
+  const [status, setStatus] = useState('disconnected');
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [error, setError] = useState(null);
   const [roomId, setRoomId] = useState(null);
   const [reportResult, setReportResult] = useState(null);
 
+  // V3 Features
+  const [username, setUsername] = useState(localStorage.getItem('anon_username') || '');
+  const [isJoined, setIsJoined] = useState(false);
+  const [peerUsername, setPeerUsername] = useState('Anonim');
+  const [onlineCount, setOnlineCount] = useState(0);
+
   const ws = useRef(null);
-  const clientId = useRef(getClientId());
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -195,7 +38,6 @@ export default function AppClean() {
   const connect = useCallback(() => {
     if (ws.current?.readyState === WebSocket.OPEN) return;
 
-    // Environment variable for WS URL (Render/Prod vs Local)
     const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
     const socket = new WebSocket(WS_URL);
     ws.current = socket;
@@ -209,34 +51,46 @@ export default function AppClean() {
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('In:', data);
+        // Debug log
+        if (data.type !== 'onlineCount') console.log('In:', data);
 
         switch (data.type) {
+          case 'hello':
+            // Handshake Step 2: Send Device ID
+            // Server gave us a connection ID (we don't strictly need it as client, but we MUST reply with deviceId)
+            socket.send(JSON.stringify({ type: 'hello_ack', deviceId: DEVICE_ID }));
+            break;
+          case 'onlineCount':
+            setOnlineCount(data.count);
+            break;
           case 'queued':
             setStatus('queued');
             setMessages([]);
             setError(null);
             setRoomId(null);
+            setPeerUsername('...');
             break;
           case 'matched':
             setStatus('matched');
             setMessages([]);
             setError(null);
             setRoomId(data.roomId);
+            setPeerUsername(data.peerUsername || 'Anonim');
             break;
           case 'message':
             setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
             break;
           case 'ended':
-            if (status === 'queued') return; // Next bastıysak etkilemesin
+            if (status === 'queued') return;
             setStatus('ended');
             setError(null);
-            // setRoomId(null); // Report için roomId lazım olabilir, hemen silmeyelim
             break;
           case 'error':
-            // alert(data.message);
             setError(data.message);
-            if (data.code === 'BANNED') setStatus('banned');
+            if (data.code === 'BANNED') {
+              setStatus('banned');
+              ws.current?.close(); // Close to prevent spam
+            }
             break;
         }
       } catch (e) {
@@ -255,18 +109,25 @@ export default function AppClean() {
     return () => ws.current?.close();
   }, []); // eslint-disable-line
 
+  const handleJoin = (e) => {
+    e.preventDefault();
+    if (!username.trim()) return;
+    localStorage.setItem('anon_username', username);
+    setIsJoined(true);
+  };
+
   const handleStart = () => {
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
       connect();
       return;
     }
-    ws.current.send(JSON.stringify({ type: 'joinQueue', clientId: clientId.current }));
+    ws.current.send(JSON.stringify({ type: 'joinQueue', username: username }));
   };
 
   const handleNext = () => {
     if (!ws.current) return;
     ws.current.send(JSON.stringify({ type: 'next' }));
-    setStatus('queued'); // Optimistic
+    setStatus('queued');
     setMessages([]);
     setReportResult(null);
   };
@@ -301,30 +162,66 @@ export default function AppClean() {
     setReportResult('Rapor iletildi.');
   };
 
+  // LOGIN SCREEN
+  if (!isJoined) {
+    return (
+      <div className="login-container">
+        <div className="login-card">
+          <h1>AnonChat</h1>
+          <p className="subtitle">Rastgele İnsanlarla, Anonim Olarak Sohbet Et.</p>
+          {onlineCount > 0 && <div className="online-badge-login">Canlı: {onlineCount} Kişi</div>}
+
+          <form onSubmit={handleJoin}>
+            <input
+              type="text"
+              placeholder="Rumuzunuz (örn: Gezgin, Kedi...)"
+              maxLength={15}
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              autoFocus
+            />
+            <button type="submit" disabled={!username.trim()}>Giriş Yap</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // MAIN CHAT SCREEN
   return (
     <div className="app-container">
       <div className="main-card">
         <header className="header">
-          <h1>AnonChat</h1>
-          <div className={`status-badge ${status}`}>{status.toUpperCase()}</div>
+          <div className="header-info">
+            <h1>AnonChat</h1>
+            <span className="online-count">{onlineCount} online</span>
+          </div>
+          <div className={`status-badge ${status}`}>
+            {status === 'matched' ? peerUsername : status.toUpperCase()}
+          </div>
         </header>
 
         {(status === 'disconnected' || status === 'banned') && (
           <div className="overlay-screen">
             <h2>{status === 'banned' ? 'Yasaklandınız' : 'Bağlantı Koptu'}</h2>
+            <div className="error-message">{error}</div>
             {status !== 'banned' && <button onClick={connect}>Tekrar Bağlan</button>}
           </div>
         )}
 
         <div className="chat-area">
           {messages.length === 0 && status === 'matched' && (
-            <div className="info-message">Eşleşildi! Merhaba de.</div>
+            <div className="info-message">
+              <strong>{peerUsername}</strong> ile eşleştin!<br />Merhaba de 👋
+            </div>
           )}
           {status === 'queued' && (
-            <div className="info-message pulsing">Eşleşme aranıyor...</div>
+            <div className="info-message pulsing">Kullanıcı aranıyor...</div>
           )}
           {status === 'idle' && (
-            <div className="info-message">Başlamak için Start'a bas.</div>
+            <div className="info-message">
+              Merhaba <strong>{username}</strong>!<br />Sohbete başlamak için butona bas.
+            </div>
           )}
           {status === 'ended' && (
             <div className="info-message">Sohbet sonlandı.</div>
@@ -338,7 +235,7 @@ export default function AppClean() {
           <div ref={messagesEndRef} />
         </div>
 
-        {error && <div className="error-bar">{error}</div>}
+        {error && status !== 'banned' && <div className="error-bar">{error}</div>}
         {reportResult && <div className="success-bar">{reportResult}</div>}
 
         <div className="controls">
@@ -347,15 +244,17 @@ export default function AppClean() {
               <input
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
-                placeholder="Bir şeyler yaz..."
+                placeholder="Mesaj yaz..."
                 autoFocus
               />
-              <button type="submit">Gönder</button>
+              <button type="submit" className="send-btn">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              </button>
             </form>
           ) : (
             <div className="action-buttons">
               {(status === 'idle' || status === 'ended') && (
-                <button className="btn-primary" onClick={handleStart}>Start</button>
+                <button className="btn-primary start-btn" onClick={handleStart}>Eşleşmeye Başla</button>
               )}
             </div>
           )}
@@ -363,9 +262,9 @@ export default function AppClean() {
           <div className="secondary-controls">
             {status === 'matched' && (
               <>
-                <button className="btn-secondary" onClick={handleNext}>Next</button>
-                <button className="btn-danger" onClick={handleLeave}>Leave</button>
-                <button className="btn-warning" onClick={() => handleReport('spam')}>Rapor Et</button>
+                <button className="btn-secondary" onClick={handleNext}>Sonraki</button>
+                <button className="btn-danger" onClick={handleLeave}>Ayrıl</button>
+                <button className="btn-ghost" onClick={() => handleReport('spam')} title="Rapor Et">⚠️</button>
               </>
             )}
             {status === 'queued' && (
@@ -380,3 +279,5 @@ export default function AppClean() {
     </div>
   );
 }
+
+export default App;
