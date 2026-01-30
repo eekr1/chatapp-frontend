@@ -53,7 +53,9 @@ function App() {
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type !== 'onlineCount') console.log('In:', data);
+        if (data.type !== 'onlineCount' && data.type !== 'message') {
+          // console.log('In:', data);
+        }
 
         switch (data.type) {
           case 'hello':
@@ -63,6 +65,11 @@ function App() {
             // V6: Auto Login
             setUsername(data.nickname);
             setIsJoined(true);
+            setStatus('idle');
+            break;
+          case 'need_nickname':
+            // V6 Hotfix: New user needs to set nickname
+            setIsJoined(false);
             setStatus('idle');
             break;
           case 'onlineCount':
