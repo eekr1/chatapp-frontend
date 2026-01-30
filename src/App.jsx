@@ -5,7 +5,6 @@ import './App.css';
 const getDeviceId = () => {
   let id = localStorage.getItem('anon_device_id');
   if (!id) {
-    // Simple random ID, enough for MVP functionality
     id = 'dev-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now().toString(36);
     localStorage.setItem('anon_device_id', id);
   }
@@ -23,8 +22,10 @@ function App() {
   const [reportResult, setReportResult] = useState(null);
   const [showBlockOption, setShowBlockOption] = useState(false);
 
-  // V3 Features
-  const [username, setUsername] = useState(localStorage.getItem('anon_username') || '');
+  // V6 Features
+  // Username is now fetched from server or set by user
+  // Initial state is empty to allow auto-login check
+  const [username, setUsername] = useState('');
   const [isJoined, setIsJoined] = useState(false);
   const [peerUsername, setPeerUsername] = useState('Anonim');
   const [onlineCount, setOnlineCount] = useState(0);
@@ -45,21 +46,24 @@ function App() {
 
     socket.onopen = () => {
       console.log('WS Connected');
-      setStatus('idle');
+      setStatus('connecting'); // Connecting state
       setError(null);
     };
 
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        // Debug log
         if (data.type !== 'onlineCount') console.log('In:', data);
 
         switch (data.type) {
           case 'hello':
-            // Handshake Step 2: Send Device ID
-            // Server gave us a connection ID (we don't strictly need it as client, but we MUST reply with deviceId)
             socket.send(JSON.stringify({ type: 'hello_ack', deviceId: DEVICE_ID }));
+            break;
+          case 'welcome':
+            // V6: Auto Login
+            setUsername(data.nickname);
+            setIsJoined(true);
+            setStatus('idle');
             break;
           case 'onlineCount':
             setOnlineCount(data.count);
@@ -78,7 +82,7 @@ function App() {
             setMessages([]);
             setError(null);
             setRoomId(data.roomId);
-            setPeerUsername(data.peerUsername || 'Anonim');
+            setPeerUsername(data.peerNickname || 'Anonim'); // V6
             setReportResult(null);
             setShowBlockOption(false);
             break;
@@ -89,12 +93,15 @@ function App() {
             if (status === 'queued') return;
             setStatus('ended');
             setError(null);
+            if (data.reason === 'blocked') {
+              setError('Sohbet engelleme nedeniyle sonlandırıldı.');
+            }
             break;
           case 'error':
             setError(data.message);
             if (data.code === 'BANNED') {
               setStatus('banned');
-              ws.current?.close(); // Close to prevent spam
+              ws.current?.close();
             }
             break;
         }
@@ -112,13 +119,14 @@ function App() {
   useEffect(() => {
     connect();
     return () => ws.current?.close();
-  }, []); // eslint-disable-line
+  }, []);
 
-  const handleJoin = (e) => {
+  // V6: Register Nickname
+  const handleSetNickname = (e) => {
     e.preventDefault();
-    if (!username.trim()) return;
-    localStorage.setItem('anon_username', username);
-    setIsJoined(true);
+    if (!username.trim() || !ws.current) return;
+
+    ws.current.send(JSON.stringify({ type: 'setNickname', nickname: username }));
   };
 
   const handleStart = () => {
@@ -126,7 +134,7 @@ function App() {
       connect();
       return;
     }
-    ws.current.send(JSON.stringify({ type: 'joinQueue', username: username }));
+    ws.current.send(JSON.stringify({ type: 'joinQueue' }));
   };
 
   const handleNext = () => {
@@ -167,7 +175,7 @@ function App() {
       reason
     }));
     setReportResult('Rapor iletildi.');
-    setShowBlockOption(true); // Show block option after reporting
+    setShowBlockOption(true);
   };
 
   const handleBlock = () => {
@@ -178,11 +186,9 @@ function App() {
     }));
     setReportResult('Kullanıcı engellendi.');
     setShowBlockOption(false);
-    // Optional: Auto-leave after blocking
-    // handleNext(); 
   };
 
-  // LOGIN SCREEN
+  // LOGIN SCREEN (Only if not joined)
   if (!isJoined) {
     return (
       <div className="login-container">
@@ -191,16 +197,23 @@ function App() {
           <p className="subtitle">Rastgele İnsanlarla, Anonim Olarak Sohbet Et.</p>
           {onlineCount > 0 && <div className="online-badge-login">Canlı: {onlineCount} Kişi</div>}
 
-          <form onSubmit={handleJoin}>
-            <input
-              type="text"
-              placeholder="Rumuzunuz (örn: Gezgin, Kedi...)"
-              maxLength={15}
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              autoFocus
-            />
-            <button type="submit" disabled={!username.trim()}>Giriş Yap</button>
+          <form onSubmit={handleSetNickname}>
+            {status === 'connecting' ? (
+              <p>Bağlanıyor...</p>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  placeholder="Rumuzunuz (örn: Gezgin, Kedi...)"
+                  maxLength={15}
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  autoFocus
+                />
+                <button type="submit" disabled={!username.trim()}>Giriş Yap</button>
+                {error && <div className="error-text">{error}</div>}
+              </>
+            )}
           </form>
         </div>
       </div>
@@ -244,7 +257,10 @@ function App() {
             </div>
           )}
           {status === 'ended' && (
-            <div className="info-message">Sohbet sonlandı.</div>
+            <div className="info-message">
+              Sohbet sonlandı.
+              {error && <div className="error-text-small">{error}</div>}
+            </div>
           )}
 
           {messages.map((m, i) => (
@@ -255,7 +271,7 @@ function App() {
           <div ref={messagesEndRef} />
         </div>
 
-        {error && status !== 'banned' && <div className="error-bar">{error}</div>}
+        {error && status !== 'banned' && status !== 'ended' && <div className="error-bar">{error}</div>}
 
         {reportResult && (
           <div className="success-bar">
