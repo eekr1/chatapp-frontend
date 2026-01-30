@@ -21,6 +21,7 @@ function App() {
   const [error, setError] = useState(null);
   const [roomId, setRoomId] = useState(null);
   const [reportResult, setReportResult] = useState(null);
+  const [showBlockOption, setShowBlockOption] = useState(false);
 
   // V3 Features
   const [username, setUsername] = useState(localStorage.getItem('anon_username') || '');
@@ -69,6 +70,8 @@ function App() {
             setError(null);
             setRoomId(null);
             setPeerUsername('...');
+            setReportResult(null);
+            setShowBlockOption(false);
             break;
           case 'matched':
             setStatus('matched');
@@ -76,6 +79,8 @@ function App() {
             setError(null);
             setRoomId(data.roomId);
             setPeerUsername(data.peerUsername || 'Anonim');
+            setReportResult(null);
+            setShowBlockOption(false);
             break;
           case 'message':
             setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
@@ -130,6 +135,7 @@ function App() {
     setStatus('queued');
     setMessages([]);
     setReportResult(null);
+    setShowBlockOption(false);
   };
 
   const handleLeave = () => {
@@ -137,6 +143,7 @@ function App() {
     ws.current.send(JSON.stringify({ type: 'leave' }));
     setStatus('idle');
     setReportResult(null);
+    setShowBlockOption(false);
   };
 
   const sendMessage = (e) => {
@@ -160,6 +167,19 @@ function App() {
       reason
     }));
     setReportResult('Rapor iletildi.');
+    setShowBlockOption(true); // Show block option after reporting
+  };
+
+  const handleBlock = () => {
+    if (!ws.current || !roomId) return;
+    ws.current.send(JSON.stringify({
+      type: 'block',
+      roomId
+    }));
+    setReportResult('Kullanıcı engellendi.');
+    setShowBlockOption(false);
+    // Optional: Auto-leave after blocking
+    // handleNext(); 
   };
 
   // LOGIN SCREEN
@@ -236,7 +256,17 @@ function App() {
         </div>
 
         {error && status !== 'banned' && <div className="error-bar">{error}</div>}
-        {reportResult && <div className="success-bar">{reportResult}</div>}
+
+        {reportResult && (
+          <div className="success-bar">
+            {reportResult}
+            {showBlockOption && (
+              <button className="btn-xs-block" onClick={handleBlock}>
+                ⛔ Engelle
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="controls">
           {status === 'matched' ? (
