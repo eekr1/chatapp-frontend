@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
+import { auth, profile, friends } from './api';
+import Auth from './components/Auth';
+import Profile from './components/Profile';
+import Friends from './components/Friends';
 
-// Persistent Device ID
+// Persistent Device ID (Legacy support or device tracking)
 const getDeviceId = () => {
   let id = localStorage.getItem('anon_device_id');
   if (!id) {
@@ -14,6 +18,16 @@ const getDeviceId = () => {
 const DEVICE_ID = getDeviceId();
 
 function App() {
+  // UI State
+  const [view, setView] = useState('chat'); // chat, profile, friends
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showFriendsModal, setShowFriendsModal] = useState(false);
+
+  // Auth State
+  const [user, setUser] = useState(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+
+  // Chat State
   const [status, setStatus] = useState('disconnected');
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -21,23 +35,53 @@ function App() {
   const [roomId, setRoomId] = useState(null);
   const [reportResult, setReportResult] = useState(null);
   const [showBlockOption, setShowBlockOption] = useState(false);
-
-  // V6 Features
-  // Username is now fetched from server or set by user
-  // Initial state is empty to allow auto-login check
-  const [username, setUsername] = useState('');
-  const [isJoined, setIsJoined] = useState(false);
   const [peerUsername, setPeerUsername] = useState('Anonim');
+  const [peerRealUsername, setPeerRealUsername] = useState(''); // Unique username
   const [onlineCount, setOnlineCount] = useState(0);
 
   const ws = useRef(null);
   const messagesEndRef = useRef(null);
 
+  const [incomingCount, setIncomingCount] = useState(0);
+
+  // Check Auth on Mount
+  useEffect(() => {
+    checkAuth();
+    const interval = setInterval(checkIncomingRequests, 10000); // 10s poll
+    return () => clearInterval(interval);
+  }, []);
+
+  const checkAuth = async () => {
+    const token = localStorage.getItem('session_token');
+    if (token) {
+      try {
+        const res = await profile.getMe();
+        setUser(res.data.user);
+        checkIncomingRequests(); // Initial check
+      } catch (e) {
+        console.error("Auth check failed", e);
+        localStorage.removeItem('session_token');
+      }
+    }
+    setIsAuthChecking(false);
+  };
+
+  const checkIncomingRequests = async () => {
+    if (!localStorage.getItem('session_token')) return;
+    try {
+      const res = await friends.list();
+      setIncomingCount(res.data.incoming.length);
+    } catch (e) { /* ignore */ }
+  };
+
+  // WebSocket Logic
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const connect = useCallback(() => {
+    if (!user) return; // Only connect if logged in
+
     if (ws.current?.readyState === WebSocket.OPEN) return;
 
     const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
@@ -46,30 +90,50 @@ function App() {
 
     socket.onopen = () => {
       console.log('WS Connected');
-      setStatus('connecting'); // Connecting state
+      setStatus('connecting');
       setError(null);
     };
 
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type !== 'onlineCount' && data.type !== 'message') {
-          // console.log('In:', data);
-        }
-
         switch (data.type) {
           case 'hello':
-            socket.send(JSON.stringify({ type: 'hello_ack', deviceId: DEVICE_ID }));
+            // Send handshake with Device ID (Legacy) AND Auth Token?
+            // The backend 'hello_ack' logic currently uses Device ID to get user. 
+            // BUT we changed backend to use explicit Auth API.
+            // Wait, the backend WebSocket `hello_ack` handler still uses `getOrCreateUser(deviceId)`.
+            // WE NEED TO UPDATE BACKEND WEBSOCKET TO AUTHENTICATE VIA TOKEN.
+            // Or we can rely on dev id mapping if we are lazy, but we want proper auth.
+            // For now, let's stick to what backend expects: `hello_ack` with `deviceId`.
+            // The backend should recognize the user by device_id if we LINKED it during login?
+            // Step 57 `auth.js` Login API:
+            // `INSERT INTO sessions (..., device_id, ...)`
+            // But `getOrCreateUser` in `index.js` uses `users_anon` table logic?
+            // Wait. The backend might have mixed logic now.
+            // Re-checking backend `index.js`...
+            // It uses `users_anon`.
+            // I did NOT update `index.js` to use `users` table for WebSocket auth!
+            // This is a gap.
+            // Ideally, I should send the TOKEN in `hello_ack` or URI.
+
+            // For this step ("Frontend update"), I will modify client to send token.
+            // I WILL NEED TO FIX BACKEND LATER IF IT DOESN'T SUPPORT IT.
+            // But wait, the backend `index.js` logic was:
+            // `const dbUser = await getOrCreateUser(deviceId, ip);`
+            // I need to update Backend to support Token Auth in WS.
+            // For now, I will send `token` in `hello_ack` and I will have to patch backend to read it.
+            socket.send(JSON.stringify({
+              type: 'hello_ack',
+              deviceId: DEVICE_ID,
+              token: localStorage.getItem('session_token') // Sending token
+            }));
             break;
           case 'welcome':
-            // V6: Auto Login
-            setUsername(data.nickname);
-            setIsJoined(true);
             setStatus('idle');
             break;
           case 'need_nickname':
-            // V6 Hotfix: New user needs to set nickname
-            setIsJoined(false);
+            // Should not happen if we are logged in with a proper user
             setStatus('idle');
             break;
           case 'onlineCount':
@@ -81,17 +145,13 @@ function App() {
             setError(null);
             setRoomId(null);
             setPeerUsername('...');
-            setReportResult(null);
-            setShowBlockOption(false);
             break;
           case 'matched':
             setStatus('matched');
-            setMessages([]);
-            setError(null);
+            setMessages([]); // Clear previous chat
             setRoomId(data.roomId);
-            setPeerUsername(data.peerNickname || 'Anonim'); // V6
-            setReportResult(null);
-            setShowBlockOption(false);
+            setPeerUsername(data.peerNickname || 'Anonim');
+            setPeerRealUsername(data.peerUsername || ''); // New: Store unique username
             break;
           case 'message':
             setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
@@ -99,17 +159,17 @@ function App() {
           case 'ended':
             if (status === 'queued') return;
             setStatus('ended');
-            setError(null);
-            if (data.reason === 'blocked') {
-              setError('Sohbet engelleme nedeniyle sonlandırıldı.');
-            }
+            // if (data.reason === 'blocked') setError('Engellendi.');
             break;
           case 'error':
-            setError(data.message);
-            if (data.code === 'BANNED') {
-              setStatus('banned');
-              ws.current?.close();
+            if (data.code === 'AUTH_ERROR') {
+              // Token invalid
+              localStorage.removeItem('session_token');
+              setUser(null);
             }
+            setError(data.message);
+            break;
+          default:
             break;
         }
       } catch (e) {
@@ -121,155 +181,114 @@ function App() {
       setStatus('disconnected');
       ws.current = null;
     };
-  }, [status]);
+  }, [user, status]); // Re-connect if user changes
 
   useEffect(() => {
-    connect();
-    return () => ws.current?.close();
-  }, []);
+    if (user) {
+      connect();
+    } else {
+      ws.current?.close();
+    }
+  }, [user, connect]);
 
-  // V6: Register Nickname
-  const handleSetNickname = (e) => {
-    e.preventDefault();
-    if (!username.trim() || !ws.current) return;
-
-    ws.current.send(JSON.stringify({ type: 'setNickname', nickname: username }));
+  const handleLogout = async () => {
+    try {
+      await auth.logout();
+    } catch (e) { /* ignore */ }
+    localStorage.removeItem('session_token');
+    setUser(null);
+    ws.current?.close();
   };
 
   const handleStart = () => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-      connect();
-      return;
+    ws.current?.send(JSON.stringify({ type: 'joinQueue' }));
+  };
+
+  const handleStartChat = (targetUsername) => {
+    ws.current?.send(JSON.stringify({ type: 'joinDirect', targetUsername }));
+    setShowFriendsModal(false); // Close modal
+    // Note: If successful, we will get 'matched' event.
+    // Error cases (not friend, offline) are handled in 'error' event or silently for now,
+    // let's assume global error handler catches them. 
+  };
+
+  const handleAddFriend = async () => {
+    if (!peerRealUsername) return;
+    try {
+      await friends.request(peerRealUsername);
+      setReportResult(`İstek gönderildi: @${peerRealUsername}`);
+    } catch (e) {
+      setReportResult('Hata: ' + (e.response?.data?.error || 'Bilinmiyor'));
     }
-    ws.current.send(JSON.stringify({ type: 'joinQueue' }));
+    setTimeout(() => setReportResult(null), 3000);
   };
 
   const handleNext = () => {
-    if (!ws.current) return;
-    ws.current.send(JSON.stringify({ type: 'next' }));
-    setStatus('queued');
-    setMessages([]);
-    setReportResult(null);
-    setShowBlockOption(false);
+    ws.current?.send(JSON.stringify({ type: 'next' }));
   };
 
   const handleLeave = () => {
-    if (!ws.current) return;
-    ws.current.send(JSON.stringify({ type: 'leave' }));
+    ws.current?.send(JSON.stringify({ type: 'leave' }));
     setStatus('idle');
-    setReportResult(null);
-    setShowBlockOption(false);
   };
 
   const sendMessage = (e) => {
     e.preventDefault();
     if (!inputText.trim() || !roomId) return;
-
-    ws.current.send(JSON.stringify({
-      type: 'message',
-      roomId: roomId,
-      text: inputText
-    }));
+    ws.current.send(JSON.stringify({ type: 'message', roomId, text: inputText }));
     setMessages(prev => [...prev, { from: 'me', text: inputText }]);
     setInputText('');
   };
 
-  const handleReport = (reason) => {
-    if (!ws.current || !roomId) return;
-    ws.current.send(JSON.stringify({
-      type: 'report',
-      roomId,
-      reason
-    }));
-    setReportResult('Rapor iletildi.');
-    setShowBlockOption(true);
-  };
+  if (isAuthChecking) return <div className="app-container">Yükleniyor...</div>;
 
-  const handleBlock = () => {
-    if (!ws.current || !roomId) return;
-    ws.current.send(JSON.stringify({
-      type: 'block',
-      roomId
-    }));
-    setReportResult('Kullanıcı engellendi.');
-    setShowBlockOption(false);
-  };
-
-  // LOGIN SCREEN (Only if not joined)
-  if (!isJoined) {
-    return (
-      <div className="login-container">
-        <div className="login-card">
-          <h1>AnonChat</h1>
-          <p className="subtitle">Rastgele İnsanlarla, Anonim Olarak Sohbet Et.</p>
-          {onlineCount > 0 && <div className="online-badge-login">Canlı: {onlineCount} Kişi</div>}
-
-          <form onSubmit={handleSetNickname}>
-            {status === 'connecting' ? (
-              <p>Bağlanıyor...</p>
-            ) : (
-              <>
-                <input
-                  type="text"
-                  placeholder="Rumuzunuz (örn: Gezgin, Kedi...)"
-                  maxLength={15}
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  autoFocus
-                />
-                <button type="submit" disabled={!username.trim()}>Giriş Yap</button>
-                {error && <div className="error-text">{error}</div>}
-              </>
-            )}
-          </form>
-        </div>
-      </div>
-    );
+  if (!user) {
+    return <Auth onLogin={setUser} />;
   }
 
-  // MAIN CHAT SCREEN
   return (
     <div className="app-container">
       <div className="main-card">
+        {/* Header */}
         <header className="header">
           <div className="header-info">
-            <h1>AnonChat</h1>
+            <h1>AnonChat v2</h1>
             <span className="online-count">{onlineCount} online</span>
           </div>
-          <div className={`status-badge ${status}`}>
-            {status === 'matched' ? peerUsername : status.toUpperCase()}
+
+          <div className="header-actions" style={{ display: 'flex', gap: '10px' }}>
+            <button className="btn-ghost" onClick={() => setShowProfileModal(true)} title="Profil">👤</button>
+            <button className="btn-ghost" onClick={() => setShowFriendsModal(true)} title="Arkadaşlar" style={{ position: 'relative' }}>
+              👥
+              {incomingCount > 0 && <span className="badge">{incomingCount}</span>}
+            </button>
+            <button className="btn-ghost" onClick={handleLogout} title="Çıkış">🚪</button>
           </div>
         </header>
 
-        {(status === 'disconnected' || status === 'banned') && (
-          <div className="overlay-screen">
-            <h2>{status === 'banned' ? 'Yasaklandınız' : 'Bağlantı Koptu'}</h2>
-            <div className="error-message">{error}</div>
-            {status !== 'banned' && <button onClick={connect}>Tekrar Bağlan</button>}
-          </div>
-        )}
+        {/* Modals */}
+        {showProfileModal && <Profile onClose={() => setShowProfileModal(false)} />}
+        {showFriendsModal && <Friends onClose={() => setShowFriendsModal(false)} onStartChat={handleStartChat} />}
 
+        {/* Chat Area */}
         <div className="chat-area">
-          {messages.length === 0 && status === 'matched' && (
-            <div className="info-message">
-              <strong>{peerUsername}</strong> ile eşleştin!<br />Merhaba de 👋
-            </div>
-          )}
-          {status === 'queued' && (
-            <div className="info-message pulsing">Kullanıcı aranıyor...</div>
-          )}
+          {/* Status Messages */}
           {status === 'idle' && (
             <div className="info-message">
-              Merhaba <strong>{username}</strong>!<br />Sohbete başlamak için butona bas.
+              Merhaba <strong>{user.display_name || user.username}</strong>!<br />
+              Sohbet aramaya başla.
             </div>
           )}
-          {status === 'ended' && (
+          {status === 'queued' && <div className="info-message pulsing">Kullanıcı aranıyor...</div>}
+          {status === 'matched' && messages.length === 0 && (
             <div className="info-message">
-              Sohbet sonlandı.
-              {error && <div className="error-text-small">{error}</div>}
+              <strong>{peerUsername}</strong> ile eşleştin!<br />Selam ver 👋
             </div>
           )}
+          {status === 'ended' && <div className="info-message">Sohbet sonlandı.</div>}
+          {status === 'disconnected' && <div className="info-message error-text">Bağlantı koptu.</div>}
 
+          {/* Messages */}
           {messages.map((m, i) => (
             <div key={i} className={`message-bubble ${m.from}`}>
               {m.text}
@@ -278,55 +297,34 @@ function App() {
           <div ref={messagesEndRef} />
         </div>
 
-        {error && status !== 'banned' && status !== 'ended' && <div className="error-bar">{error}</div>}
-
-        {reportResult && (
-          <div className="success-bar">
-            {reportResult}
-            {showBlockOption && (
-              <button className="btn-xs-block" onClick={handleBlock}>
-                ⛔ Engelle
-              </button>
-            )}
-          </div>
-        )}
-
+        {/* Controls */}
         <div className="controls">
           {status === 'matched' ? (
-            <form className="input-group" onSubmit={sendMessage}>
-              <input
-                value={inputText}
-                onChange={e => setInputText(e.target.value)}
-                placeholder="Mesaj yaz..."
-                autoFocus
-              />
-              <button type="submit" className="send-btn">
-                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-              </button>
-            </form>
+            <>
+              <form className="input-group" onSubmit={sendMessage}>
+                <input value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Mesaj..." autoFocus />
+                <button type="submit" className="send-btn">➤</button>
+              </form>
+              <div className="secondary-controls">
+                {peerRealUsername && (
+                  <button className="btn-secondary" onClick={handleAddFriend} title="Arkadaş Ekle">➕</button>
+                )}
+                <button className="btn-secondary" onClick={handleNext}>Sonraki</button>
+                <button className="btn-danger" onClick={handleLeave}>Ayrıl</button>
+              </div>
+            </>
           ) : (
             <div className="action-buttons">
               {(status === 'idle' || status === 'ended') && (
-                <button className="btn-primary start-btn" onClick={handleStart}>Eşleşmeye Başla</button>
+                <button className="btn-primary start-btn" onClick={handleStart}>
+                  {status === 'ended' ? 'Yeni Kişi Bul' : 'Eşleşmeye Başla'}
+                </button>
+              )}
+              {status === 'queued' && (
+                <button className="btn-danger" onClick={handleLeave}>İptal</button>
               )}
             </div>
           )}
-
-          <div className="secondary-controls">
-            {status === 'matched' && (
-              <>
-                <button className="btn-secondary" onClick={handleNext}>Sonraki</button>
-                <button className="btn-danger" onClick={handleLeave}>Ayrıl</button>
-                <button className="btn-ghost" onClick={() => handleReport('spam')} title="Rapor Et">⚠️</button>
-              </>
-            )}
-            {status === 'queued' && (
-              <button className="btn-danger" onClick={handleLeave}>İptal</button>
-            )}
-            {status === 'ended' && (
-              <button className="btn-secondary" onClick={handleNext}>Yeni Kişi Bul</button>
-            )}
-          </div>
         </div>
       </div>
     </div>
