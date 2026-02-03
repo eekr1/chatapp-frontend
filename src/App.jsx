@@ -21,7 +21,6 @@ function App() {
   // UI State
   const [view, setView] = useState('chat'); // chat, profile, friends
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showFriendsModal, setShowFriendsModal] = useState(false);
 
   // Auth State
   const [user, setUser] = useState(null);
@@ -60,6 +59,7 @@ function App() {
   // V13: Separation of Chats
   const [chatTab, setChatTab] = useState('anon'); // 'anon' or 'friends'
   const [friendChats, setFriendChats] = useState({}); // { [userId]: messages[] }
+  const [friendsList, setFriendsList] = useState([]); // List of friend objects
   const [activeFriend, setActiveFriend] = useState(null); // { userId, nickname, username, conversationId }
   const [unreadFriends, setUnreadFriends] = useState(new Set());
 
@@ -231,10 +231,15 @@ function App() {
           case 'direct_message':
             playNotification();
             const senderId = data.fromUserId;
-            setFriendChats(prev => ({
-              ...prev,
-              [senderId]: [...(prev[senderId] || []), { from: 'peer', text: data.text, timestamp: Date.now() }]
-            }));
+            setFriendChats(prev => {
+              const currentMsgs = prev[senderId] || [];
+              const newMessage = { from: 'peer', text: data.text, timestamp: Date.now() };
+              // Avoid duplicates if history was just loaded
+              return {
+                ...prev,
+                [senderId]: [...currentMsgs, newMessage]
+              };
+            });
             if (chatTab !== 'friends' || activeFriend?.userId !== senderId) {
               setUnreadFriends(prev => new Set(prev).add(senderId));
             }
@@ -271,10 +276,22 @@ function App() {
   useEffect(() => {
     if (user) {
       connect();
+      loadFriends();
+      const intv = setInterval(loadFriends, 30000); // 30s poll
+      return () => clearInterval(intv);
     } else {
       ws.current?.close();
     }
   }, [user, connect]);
+
+  const loadFriends = async () => {
+    try {
+      const res = await friends.list();
+      setFriendsList(res.data.friends || []);
+    } catch (e) {
+      console.error('Failed to load friends', e);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -327,6 +344,27 @@ function App() {
   const handleLeave = () => {
     ws.current?.send(JSON.stringify({ type: 'leave' }));
     setStatus('idle');
+  };
+
+  const handleAcceptFriend = async (requestId) => {
+    try {
+      await friends.accept(requestId);
+      setReportResult('Arkadaşlık isteği kabul edildi.');
+      loadFriends();
+      checkIncomingRequests();
+    } catch (e) {
+      console.error('Accept fail', e);
+    }
+  };
+
+  const handleRejectFriend = async (requestId) => {
+    try {
+      await friends.reject(requestId);
+      setReportResult('Arkadaşlık isteği reddedildi.');
+      checkIncomingRequests();
+    } catch (e) {
+      console.error('Reject fail', e);
+    }
   };
 
   const handleFileSelect = (e) => {
@@ -452,27 +490,22 @@ function App() {
       <div className="main-card">
         {/* Header */}
         <header className="header">
-          <div className="header-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <img src={getAvatarUrl(user.id)} alt="Me" style={{ width: 36, height: 36, borderRadius: '50%', background: '#334155', border: '2px solid #3B82F6' }} />
+          <div className="header-info">
+            <img src={getAvatarUrl(user.id)} alt="Me" className="header-avatar" />
             <div>
-              <h1 style={{ lineHeight: 1 }}>TalkX</h1>
-              <span className="online-count" style={{ marginTop: 2 }}>{onlineCount} online</span>
+              <h1>TalkX</h1>
+              <span className="online-count">{onlineCount} online</span>
             </div>
           </div>
 
-          <div className="header-actions" style={{ display: 'flex', gap: '10px' }}>
+          <div className="header-actions">
             <button className="btn-ghost" onClick={() => setShowProfileModal(true)} title="Profil">👤</button>
-            <button className="btn-ghost" onClick={() => setShowFriendsModal(true)} title="Arkadaşlar" style={{ position: 'relative' }}>
-              👥
-              {incomingCount > 0 && <span className="badge">{incomingCount}</span>}
-            </button>
-            <button className="btn-ghost" onClick={handleLogout} title="Çıkış">🚪</button>
+            <button className="btn-ghost disconnect-btn" onClick={handleLogout} title="Çıkış">🔌</button>
           </div>
         </header>
 
         {/* Modals */}
         {showProfileModal && <Profile onClose={() => setShowProfileModal(false)} />}
-        {showFriendsModal && <Friends onClose={() => setShowFriendsModal(false)} onStartChat={handleStartChat} />}
         {viewingImage && (
           <div className="modal-overlay" onClick={() => setViewingImage(null)}>
             <div className="modal-content" style={{ maxWidth: '90%', maxHeight: '90%', padding: '20px', background: 'rgba(0,0,0,0.8)', border: '1px solid #333' }} onClick={e => e.stopPropagation()}>
@@ -577,10 +610,56 @@ function App() {
           ) : (
             <div className="friend-chat-view">
               {!activeFriend ? (
-                <div className="info-message">Sohbet etmek için arkadaş listesinden birini seçin.</div>
+                <div className="friends-list-container">
+                  <div className="friends-header">
+                    <h3>Arkadaşlarım</h3>
+                    <button className="btn-sm-primary" onClick={loadFriends}>🔄</button>
+                  </div>
+                  {friendsList.length === 0 ? (
+                    <div className="info-message">Henüz arkadaşın yok. Anonim sohbetlerden arkadaş ekleyebilirsin!</div>
+                  ) : (
+                    friendsList.map(u => (
+                      <div key={u.user_id} className="user-row" onClick={() => handleStartChat({
+                        userId: u.user_id,
+                        nickname: u.display_name || u.username,
+                        username: u.username
+                      })}>
+                        <div className="user-info-full">
+                          <div className="avatar-container">
+                            <img src={getAvatarUrl(u.user_id)} alt="avatar" className="avatar-img" />
+                            {u.is_online && <span className="status-dot"></span>}
+                          </div>
+                          <div className="user-details">
+                            <span className="dname">{u.display_name || u.username}</span>
+                            <span className="uname">@{u.username}</span>
+                          </div>
+                        </div>
+                        <div className="user-actions">
+                          {unreadFriends.has(u.user_id) && <span className="badge-notification">Yeni!</span>}
+                          <button className="btn-ghost">💬</button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {friendRequests.length > 0 && (
+                    <div className="friend-requests-section">
+                      <h4>Bekleyen İstekler ({friendRequests.length})</h4>
+                      {friendRequests.map(req => (
+                        <div key={req.id} className="user-row request-row">
+                          <span className="uname">@{req.sender_username}</span>
+                          <div className="request-btns">
+                            <button className="btn-sm-success" onClick={() => handleAcceptFriend(req.id)}>✓</button>
+                            <button className="btn-sm-danger" onClick={() => handleRejectFriend(req.id)}>✕</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <>
                   <div className="active-friend-header">
+                    <button className="btn-ghost back-btn" onClick={() => setActiveFriend(null)}>←</button>
                     <span><strong>{activeFriend.nickname}</strong> ile sohbet</span>
                     <button className="btn-ghost" onClick={() => setActiveFriend(null)}>✕</button>
                   </div>
