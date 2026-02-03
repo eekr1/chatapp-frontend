@@ -108,6 +108,9 @@ function App() {
             setStatus('queued');
             setScreen('matching');
             break;
+          case 'debug':
+            console.log('%c[SERVER DEBUG]', 'color: #ff00ff; font-weight: bold', data.msg, data);
+            break;
           case 'matched':
             setStatus('matched');
             setRoomId(data.roomId);
