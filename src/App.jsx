@@ -107,7 +107,13 @@ function App() {
 
     if (ws.current?.readyState === WebSocket.OPEN) return;
 
-    const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
+    const host = window.location.host;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const fallbackUrl = `${protocol}//${host}`;
+
+    // In dev, usually localhost:3000. In prod, same host if matched.
+    const WS_URL = import.meta.env.VITE_WS_URL || (host.includes('localhost') ? 'ws://localhost:3000' : fallbackUrl);
+
     const socket = new WebSocket(WS_URL);
     ws.current = socket;
 

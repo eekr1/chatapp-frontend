@@ -13,6 +13,15 @@ api.interceptors.request.use(config => {
     return config;
 });
 
+// Diagnostic logging
+api.interceptors.response.use(
+    response => response,
+    error => {
+        console.error(`API Error [${error.config?.method?.toUpperCase()}] ${error.config?.url}:`, error.response?.status, error.message);
+        return Promise.reject(error);
+    }
+);
+
 export const auth = {
     register: (username, password) => api.post('/auth/register', { username, password }),
     login: (username, password, device_id) => api.post('/auth/login', { username, password, device_id }),
