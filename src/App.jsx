@@ -60,6 +60,7 @@ function App() {
   const [chatTab, setChatTab] = useState('anon'); // 'anon' or 'friends'
   const [friendChats, setFriendChats] = useState({}); // { [userId]: messages[] }
   const [friendsList, setFriendsList] = useState([]); // List of friend objects
+  const [friendRequests, setFriendRequests] = useState([]); // Pending requests
   const [activeFriend, setActiveFriend] = useState(null); // { userId, nickname, username, conversationId }
   const [unreadFriends, setUnreadFriends] = useState(new Set());
 
@@ -102,6 +103,7 @@ function App() {
     if (!localStorage.getItem('session_token')) return;
     try {
       const res = await friends.list();
+      setFriendRequests(res.data.incoming || []);
       setIncomingCount(res.data.incoming.length);
     } catch (e) { /* ignore */ }
   };
@@ -288,6 +290,7 @@ function App() {
     try {
       const res = await friends.list();
       setFriendsList(res.data.friends || []);
+      setFriendRequests(res.data.incoming || []);
     } catch (e) {
       console.error('Failed to load friends', e);
     }
