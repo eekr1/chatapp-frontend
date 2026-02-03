@@ -40,10 +40,26 @@ function App() {
   const [onlineCount, setOnlineCount] = useState(0);
 
   const ws = useRef(null);
-  const messagesEndRef = useRef(null);
+
 
   const [incomingCount, setIncomingCount] = useState(0);
-  const [iceBreakerPreview, setIceBreakerPreview] = useState(null); // Preview box state
+  const [iceBreakerPreview, setIceBreakerPreview] = useState(null);
+
+  const messagesEndRef = useRef(null);
+
+  const formatTime = (ts) => {
+    if (!ts) return '';
+    const date = new Date(ts);
+    return date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, friendChats, activeFriend, chatTab, isPeerTyping]); // Preview box state
 
   // V7: Interactivity
   const [isPeerTyping, setIsPeerTyping] = useState(false);
@@ -201,10 +217,18 @@ function App() {
             setIsPeerTyping(false);
             break;
           case 'typing':
-            setIsPeerTyping(true);
+            if (chatTab === 'friends' && activeFriend && data.fromUserId === activeFriend.userId) {
+              setIsPeerTyping(true);
+            } else if (chatTab === 'anon' && !data.fromUserId) {
+              setIsPeerTyping(true);
+            }
             break;
           case 'stop_typing':
-            setIsPeerTyping(false);
+            if (chatTab === 'friends' && activeFriend && data.fromUserId === activeFriend.userId) {
+              setIsPeerTyping(false);
+            } else if (chatTab === 'anon' && !data.fromUserId) {
+              setIsPeerTyping(false);
+            }
             break;
 
           case 'image_sent':
@@ -302,6 +326,23 @@ function App() {
     }
   };
 
+  // Persistence: Save active friend
+  useEffect(() => {
+    if (activeFriend) localStorage.setItem('active_friend_id', activeFriend.userId);
+    else localStorage.removeItem('active_friend_id');
+  }, [activeFriend]);
+
+  // Persistence: Restore active friend
+  useEffect(() => {
+    const stored = localStorage.getItem('active_friend_id');
+    if (stored && friendsList.length > 0 && !activeFriend) {
+      const f = friendsList.find(i => i.user_id === stored);
+      if (f) {
+        handleStartChat({ userId: f.user_id, nickname: f.display_name || f.username, username: f.username });
+      }
+    }
+  }, [friendsList]);
+
   const handleLogout = async () => {
     try {
       await auth.logout();
@@ -381,6 +422,20 @@ function App() {
       checkIncomingRequests();
     } catch (e) {
       console.error('Reject fail', e);
+    }
+  };
+
+  const handleDeleteFriend = async () => {
+    if (!activeFriend) return;
+    if (!confirm(activeFriend.nickname + ' adlı arkadaşı silmek istediğine emin misin?')) return;
+
+    try {
+      await friends.reject(activeFriend.userId); // Re-using reject endpoint which deletes friendship
+      setActiveFriend(null);
+      setChatTab('friends'); // Go back to list
+      loadFriends(); // Refresh list
+    } catch (e) {
+      alert('Hata oluştu.');
     }
   };
 
@@ -483,14 +538,20 @@ function App() {
   const handleInputChange = (e) => {
     setInputText(e.target.value);
 
-    if (ws.current?.readyState === WebSocket.OPEN && roomId) {
-      ws.current.send(JSON.stringify({ type: 'typing' }));
-
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-
-      typingTimeoutRef.current = setTimeout(() => {
-        ws.current.send(JSON.stringify({ type: 'stop_typing' }));
-      }, 1000);
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      if (chatTab === 'anon' && roomId) {
+        ws.current.send(JSON.stringify({ type: 'typing' }));
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+          ws.current.send(JSON.stringify({ type: 'stop_typing' }));
+        }, 1000);
+      } else if (chatTab === 'friends' && activeFriend) {
+        ws.current.send(JSON.stringify({ type: 'typing', targetUserId: activeFriend.userId }));
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+          ws.current.send(JSON.stringify({ type: 'stop_typing', targetUserId: activeFriend.userId }));
+        }, 1000);
+      }
     }
   };
 
@@ -589,7 +650,7 @@ function App() {
                 });
               }}
             >
-              👥 Arkadaşlar {unreadFriends.size > 0 && <span className="badge-small">{unreadFriends.size}</span>}
+              👥 Arkadaşlar {(unreadFriends.size + friendRequests.length) > 0 && <span className="badge-small">{unreadFriends.size + friendRequests.length}</span>}
             </button>
           </div>
 
@@ -637,8 +698,15 @@ function App() {
                       </button>
                     </div>
                   ) : (m.text)}
+                  <div className="msg-time" style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: 4 }}>{formatTime(m.timestamp)}</div>
                 </div>
               ))}
+              {isPeerTyping && (
+                <div className="message-bubble peer typing-indicator">
+                  <span className="dot">.</span><span className="dot">.</span><span className="dot">.</span>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
               {isPeerTyping && (
                 <div className="message-bubble peer typing-indicator">
                   <span className="dot">.</span><span className="dot">.</span><span className="dot">.</span>
@@ -673,7 +741,7 @@ function App() {
                           </div>
                         </div>
                         <div className="user-actions">
-                          {unreadFriends.has(u.user_id) && <span className="badge-notification">Yeni!</span>}
+                          {u.unread_count > 0 && <span className="badge-notification">{u.unread_count}</span>}
                           <button className="btn-ghost">💬</button>
                         </div>
                       </div>
@@ -700,6 +768,7 @@ function App() {
                     <button className="btn-ghost back-btn" onClick={() => setActiveFriend(null)}>←</button>
                     <span><strong>{activeFriend.nickname}</strong> ile sohbet</span>
                     <button className="btn-ghost" onClick={() => setActiveFriend(null)}>✕</button>
+                    <button className="btn-ghost" style={{ color: '#EF4444', marginLeft: 10 }} onClick={handleDeleteFriend} title="Arkadaşı Sil">🗑️</button>
                   </div>
                   <div className="friend-messages-container">
                     {(friendChats[activeFriend.userId] || []).map((m, i) => (
@@ -711,14 +780,20 @@ function App() {
                               className="btn-primary"
                               style={{ width: '100%', fontSize: '0.9rem', padding: '8px', background: m.opened ? '#475569' : 'var(--primary)' }}
                               onClick={() => requestImage(m.mediaId)}
-                              disabled={m.opened}
+                              disabled={m.opened || m.mediaExpired}
                             >
-                              {m.opened ? 'Açıldı (Silindi)' : '📸 Görüntüle'}
+                              {m.opened || m.mediaExpired ? 'Açıldı (Silindi)' : '📸 Görüntüle'}
                             </button>
                           </div>
                         ) : (m.text)}
+                        <div className="msg-time" style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: 4 }}>{formatTime(m.timestamp)}</div>
                       </div>
                     ))}
+                    {isPeerTyping && (
+                      <div className="message-bubble peer typing-indicator">
+                        <span className="dot">.</span><span className="dot">.</span><span className="dot">.</span>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
