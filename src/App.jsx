@@ -39,14 +39,28 @@ function App() {
   const [peerId, setPeerId] = useState(null); // V13: Stable Id for avatar
   const [onlineCount, setOnlineCount] = useState(0);
 
+  // Refs
   const ws = useRef(null);
+  const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const fileInputRef = useRef(null);
 
-
+  // Advanced State
   const [incomingCount, setIncomingCount] = useState(0);
   const [iceBreakerPreview, setIceBreakerPreview] = useState(null);
+  const [isPeerTyping, setIsPeerTyping] = useState(false);
+  const [viewingImage, setViewingImage] = useState(null);
+  const [showReportModal, setShowReportModal] = useState(false);
 
-  const messagesEndRef = useRef(null);
+  // Friend System State
+  const [chatTab, setChatTab] = useState('anon'); // 'anon' or 'friends'
+  const [friendChats, setFriendChats] = useState({}); // { [userId]: messages[] }
+  const [friendsList, setFriendsList] = useState([]); // List of friend objects
+  const [friendRequests, setFriendRequests] = useState([]); // Pending requests
+  const [activeFriend, setActiveFriend] = useState(null); // { userId, nickname, username, conversationId }
+  const [unreadFriends, setUnreadFriends] = useState(new Set());
 
+  // Helpers
   const formatTime = (ts) => {
     if (!ts) return '';
     const date = new Date(ts);
@@ -57,28 +71,10 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Effects
   useEffect(() => {
     scrollToBottom();
-  }, [messages, friendChats, activeFriend, chatTab, isPeerTyping]); // Preview box state
-
-  // V7: Interactivity
-  const [isPeerTyping, setIsPeerTyping] = useState(false);
-  const typingTimeoutRef = useRef(null);
-
-  // V8: Ephemeral Images
-  const [viewingImage, setViewingImage] = useState(null);
-  const fileInputRef = useRef(null);
-
-  // V11: Report UI
-  const [showReportModal, setShowReportModal] = useState(false);
-
-  // V13: Separation of Chats
-  const [chatTab, setChatTab] = useState('anon'); // 'anon' or 'friends'
-  const [friendChats, setFriendChats] = useState({}); // { [userId]: messages[] }
-  const [friendsList, setFriendsList] = useState([]); // List of friend objects
-  const [friendRequests, setFriendRequests] = useState([]); // Pending requests
-  const [activeFriend, setActiveFriend] = useState(null); // { userId, nickname, username, conversationId }
-  const [unreadFriends, setUnreadFriends] = useState(new Set());
+  }, [messages, friendChats, activeFriend, chatTab, isPeerTyping]);
 
   const playNotification = () => {
     try {
@@ -87,6 +83,7 @@ function App() {
       audio.play().catch(e => console.log('Audio play error', e));
     } catch (e) { }
   };
+
 
   // Check Auth on Mount
   useEffect(() => {
