@@ -40,7 +40,8 @@ export const friends = {
     request: (target_username) => api.post('/friends/request', { target_username }),
     list: () => api.get('/friends/list'),
     accept: (request_user_id) => api.post('/friends/accept', { request_user_id }),
-    reject: (target_user_id) => api.post('/friends/reject', { target_user_id })
+    reject: (target_user_id) => api.post('/friends/reject', { target_user_id }),
+    getHistory: (friendId) => api.get(`/friends/history/${friendId}`)
 };
 
 export const getAvatar = (username) => {

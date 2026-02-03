@@ -43,6 +43,7 @@ function App() {
   const messagesEndRef = useRef(null);
 
   const [incomingCount, setIncomingCount] = useState(0);
+  const [iceBreakerPreview, setIceBreakerPreview] = useState(null); // Preview box state
 
   // V7: Interactivity
   const [isPeerTyping, setIsPeerTyping] = useState(false);
@@ -71,7 +72,8 @@ function App() {
   }, []);
 
   const getAvatarUrl = (seed) => {
-    return `https://robohash.org/${encodeURIComponent(seed || 'anon')}.png?set=set4&size=100x100`;
+    // V13: Consistent Seed (userId preferred) and robotic style
+    return `https://api.dicebear.com/9.x/bottts/svg?seed=${encodeURIComponent(seed || 'anon')}`;
   };
 
   const checkAuth = async () => {
@@ -258,12 +260,23 @@ function App() {
     ws.current?.send(JSON.stringify({ type: 'joinQueue' }));
   };
 
-  const handleStartChat = (targetUsername) => {
+  const handleStartChat = async (targetUsername) => {
+    // V13: Load History before joining
+    try {
+      // Find friend user_id from list or we can just fetch history by username if API supports it.
+      // My API currently uses friendId. Let's find it.
+      const res = await friends.list();
+      const friend = res.data.friends.find(f => f.username === targetUsername);
+      if (friend) {
+        const historyRes = await friends.getHistory(friend.user_id);
+        setMessages(historyRes.data.messages);
+      }
+    } catch (e) {
+      console.error('History load failed', e);
+    }
+
     ws.current?.send(JSON.stringify({ type: 'joinDirect', targetUsername }));
-    setShowFriendsModal(false); // Close modal
-    // Note: If successful, we will get 'matched' event.
-    // Error cases (not friend, offline) are handled in 'error' event or silently for now,
-    // let's assume global error handler catches them. 
+    setShowFriendsModal(false);
   };
 
   const handleAddFriend = async () => {
@@ -337,22 +350,28 @@ function App() {
     }
   };
 
-  const handleIceBreaker = () => {
+  const handleIceBreaker = (action = 'shuffle') => {
     if (ws.current?.readyState !== WebSocket.OPEN || !roomId) return;
 
-    const breakers = [
-      "🎲 Zar attım: " + (Math.floor(Math.random() * 6) + 1),
-      "💡 Konu: En sevdiğin film hangisi?",
-      "💡 Konu: Bir süper gücün olsa ne olurdu?",
-      "💡 Konu: Issız bir adaya düşsen yanına alacağın 3 şey?",
-      "💡 Konu: Çocukken ne olmak isterdin?",
-      "❓ Soru: En son ne zaman kahkaha attın?",
-      "🗿 Taş Kağıt Makas: " + ['Taş', 'Kağıt', 'Makas'][Math.floor(Math.random() * 3)]
-    ];
-
-    const text = breakers[Math.floor(Math.random() * breakers.length)];
-    ws.current.send(JSON.stringify({ type: 'message', roomId, text }));
-    setMessages(prev => [...prev, { from: 'me', text }]);
+    if (action === 'shuffle') {
+      const breakers = [
+        "🎲 Zar attım: " + (Math.floor(Math.random() * 6) + 1),
+        "💡 Konu: En sevdiğin film hangisi?",
+        "💡 Konu: Bir süper gücün olsa ne olurdu?",
+        "💡 Konu: Issız bir adaya düşsen yanına alacağın 3 şey?",
+        "💡 Konu: Çocukken ne olmak isterdin?",
+        "❓ Soru: En son ne zaman kahkaha attın?",
+        "🗿 Taş Kağıt Makas: " + ['Taş', 'Kağıt', 'Makas'][Math.floor(Math.random() * 3)]
+      ];
+      const text = breakers[Math.floor(Math.random() * breakers.length)];
+      setIceBreakerPreview(text);
+    } else if (action === 'send' && iceBreakerPreview) {
+      ws.current.send(JSON.stringify({ type: 'message', roomId, text: iceBreakerPreview }));
+      setMessages(prev => [...prev, { from: 'me', text: iceBreakerPreview }]);
+      setIceBreakerPreview(null);
+    } else if (action === 'close') {
+      setIceBreakerPreview(null);
+    }
   };
 
   const handleInputChange = (e) => {
@@ -448,6 +467,15 @@ function App() {
               <img src={getAvatarUrl(peerRealUsername || peerUsername)} alt="Peer" style={{ width: 96, height: 96, borderRadius: '50%', marginBottom: 15, background: '#1e293b', border: '4px solid #3B82F6' }} />
               <div style={{ fontSize: '1.2rem', marginBottom: 5 }}><strong>{peerUsername}</strong> ile eşleştin!</div>
               <div style={{ opacity: 0.7 }}>Selam ver 👋</div>
+              {peerRealUsername && (
+                <button
+                  className="btn-secondary"
+                  style={{ marginTop: 15, background: 'rgba(59, 130, 246, 0.2)', color: '#60A5FA', border: '1px solid #3B82F6' }}
+                  onClick={handleAddFriend}
+                >
+                  ➕ Arkadaş Ekle
+                </button>
+              )}
             </div>
           )}
           {status === 'ended' && <div className="info-message">Sohbet sonlandı.</div>}
@@ -484,6 +512,16 @@ function App() {
           {status === 'matched' ? (
             <>
               <form className="input-group" onSubmit={sendMessage}>
+                {iceBreakerPreview && (
+                  <div className="ice-breaker-preview">
+                    <div className="preview-text">{iceBreakerPreview}</div>
+                    <div className="preview-actions">
+                      <button type="button" onClick={() => handleIceBreaker('shuffle')} title="Değiştir">🎲</button>
+                      <button type="button" onClick={() => handleIceBreaker('send')} title="Gönder">➤</button>
+                      <button type="button" onClick={() => handleIceBreaker('close')} title="Kapat">✕</button>
+                    </div>
+                  </div>
+                )}
                 <input
                   type="file"
                   accept="image/*"
@@ -492,7 +530,7 @@ function App() {
                   onChange={handleFileSelect}
                 />
                 <button type="button" className="btn-ghost" title="Fotoğraf" onClick={() => fileInputRef.current?.click()}>📷</button>
-                <button type="button" className="btn-ghost" title="Buz Kırıcı / Eğlence" onClick={handleIceBreaker}>🎲</button>
+                <button type="button" className="btn-ghost" title="Buz Kırıcı / Eğlence" onClick={() => handleIceBreaker('shuffle')}>🎲</button>
                 <input value={inputText} onChange={handleInputChange} placeholder="Mesaj..." autoFocus />
                 <button type="submit" className="send-btn">➤</button>
               </form>

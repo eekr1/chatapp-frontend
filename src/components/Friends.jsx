@@ -94,7 +94,7 @@ export default function Friends({ onClose, onStartChat }) {
                         {list.friends.map(u => (
                             <div key={u.user_id} className="user-row">
                                 <div className="avatar-container">
-                                    <img src={getAvatar(u.username)} alt="av" className="avatar-img" />
+                                    <img src={`https://api.dicebear.com/9.x/bottts/svg?seed=${u.user_id}`} alt="av" className="avatar-img" />
                                     {u.is_online && <span className="status-dot"></span>}
                                 </div>
                                 <div className="user-info" style={{ flex: 1 }}>
