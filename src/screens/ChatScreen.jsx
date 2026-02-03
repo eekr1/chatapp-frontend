@@ -28,7 +28,8 @@ const ChatScreen = ({
     isChatEnded = false, // New prop
     onSendImage, // New
     onViewImage, // New
-    onCloseImage // New
+    onCloseImage, // New
+    viewingImage // New
 }) => {
     const [inputValue, setInputValue] = useState("");
     const [randomName, setRandomName] = useState("");
@@ -156,15 +157,15 @@ const ChatScreen = ({
             )}
 
             {/* Image View Modal */}
-            {window.viewingImage && (
+            {viewingImage && (
                 <div className="animate-fade-in" style={{
                     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
                     background: 'rgba(0,0,0,0.95)', zIndex: 100,
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
-                }} onClick={() => { window.viewingImage = null; /* Hacky local state handling or use prop? Better validation below */ }}>
-                    <img src={window.viewingImage} style={{ maxWidth: '90%', maxHeight: '80vh', borderRadius: 8, border: '2px solid var(--primary)' }} />
+                }} onClick={() => { if (onCloseImage) onCloseImage(); }}>
+                    <img src={viewingImage} style={{ maxWidth: '90%', maxHeight: '80vh', borderRadius: 8, border: '2px solid var(--primary)' }} />
                     <p style={{ color: '#fff', marginTop: 20 }}>Bu fotoğraf kapatıldığında silinecektir.</p>
-                    <button onClick={() => { window.viewingImage = null; if (onCloseImage) onCloseImage(); }}
+                    <button onClick={(e) => { e.stopPropagation(); if (onCloseImage) onCloseImage(); }}
                         className="btn-solid-purple" style={{ marginTop: 20 }}>
                         Kapat
                     </button>
