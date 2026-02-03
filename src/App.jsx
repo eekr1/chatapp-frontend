@@ -37,6 +37,7 @@ function App() {
   const [showBlockOption, setShowBlockOption] = useState(false);
   const [peerUsername, setPeerUsername] = useState('Anonim');
   const [peerRealUsername, setPeerRealUsername] = useState(''); // Unique username
+  const [peerId, setPeerId] = useState(null); // V13: Stable Id for avatar
   const [onlineCount, setOnlineCount] = useState(0);
 
   const ws = useRef(null);
@@ -183,6 +184,7 @@ function App() {
             setRoomId(data.roomId);
             setPeerUsername(data.peerNickname || 'Anonim');
             setPeerRealUsername(data.peerUsername || '');
+            setPeerId(data.peerId || null); // Capture peer identification for avatar
             setIsPeerTyping(false);
             break;
           case 'message':
@@ -408,7 +410,7 @@ function App() {
         {/* Header */}
         <header className="header">
           <div className="header-info" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <img src={getAvatarUrl(user.username)} alt="Me" style={{ width: 36, height: 36, borderRadius: '50%', background: '#334155', border: '2px solid #3B82F6' }} />
+            <img src={getAvatarUrl(user.id)} alt="Me" style={{ width: 36, height: 36, borderRadius: '50%', background: '#334155', border: '2px solid #3B82F6' }} />
             <div>
               <h1 style={{ lineHeight: 1 }}>TalkX</h1>
               <span className="online-count" style={{ marginTop: 2 }}>{onlineCount} online</span>
@@ -464,13 +466,12 @@ function App() {
           {status === 'queued' && <div className="info-message pulsing">Kullanıcı aranıyor...</div>}
           {status === 'matched' && messages.length === 0 && (
             <div className="info-message">
-              <img src={getAvatarUrl(peerRealUsername || peerUsername)} alt="Peer" style={{ width: 96, height: 96, borderRadius: '50%', marginBottom: 15, background: '#1e293b', border: '4px solid #3B82F6' }} />
+              <img src={getAvatarUrl(peerId || peerRealUsername || peerUsername)} alt="Peer" style={{ width: 96, height: 96, borderRadius: '50%', marginBottom: 15, background: '#1e293b', border: '4px solid #3B82F6' }} />
               <div style={{ fontSize: '1.2rem', marginBottom: 5 }}><strong>{peerUsername}</strong> ile eşleştin!</div>
               <div style={{ opacity: 0.7 }}>Selam ver 👋</div>
               {peerRealUsername && (
                 <button
-                  className="btn-secondary"
-                  style={{ marginTop: 15, background: 'rgba(59, 130, 246, 0.2)', color: '#60A5FA', border: '1px solid #3B82F6' }}
+                  className="btn-add-friend"
                   onClick={handleAddFriend}
                 >
                   ➕ Arkadaş Ekle
@@ -518,7 +519,7 @@ function App() {
                     <div className="preview-actions">
                       <button type="button" onClick={() => handleIceBreaker('shuffle')} title="Değiştir">🎲</button>
                       <button type="button" onClick={() => handleIceBreaker('send')} title="Gönder">➤</button>
-                      <button type="button" onClick={() => handleIceBreaker('close')} title="Kapat">✕</button>
+                      <button type="button" className="btn-close" onClick={() => handleIceBreaker('close')} title="Kapat">✕</button>
                     </div>
                   </div>
                 )}
@@ -537,7 +538,7 @@ function App() {
               <div className="secondary-controls">
                 <button type="button" className="btn-ghost" title="Raporla" style={{ flex: 0, color: '#EF4444' }} onClick={() => setShowReportModal(true)}>⚠️</button>
                 {peerRealUsername && (
-                  <button className="btn-secondary" onClick={handleAddFriend} title="Arkadaş Ekle">➕</button>
+                  <button className="btn-add-friend" style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem' }} onClick={handleAddFriend} title="Arkadaş Ekle">➕</button>
                 )}
                 <button className="btn-secondary" onClick={handleNext}>Sonraki</button>
                 <button className="btn-danger" onClick={handleLeave}>Ayrıl</button>

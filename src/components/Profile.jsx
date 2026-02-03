@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { profile, getAvatar } from '../api';
 
 export default function Profile({ onClose }) {
-    const [data, setData] = useState({ display_name: '', bio: '', avatar_url: '' });
+    const [data, setData] = useState({ display_name: '', bio: '', avatar_url: '', id: '' });
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState('');
 
@@ -16,7 +16,8 @@ export default function Profile({ onClose }) {
             setData({
                 display_name: res.data.user.display_name || '',
                 bio: res.data.user.bio || '',
-                avatar_url: res.data.user.avatar_url || ''
+                avatar_url: res.data.user.avatar_url || '',
+                id: res.data.user.id
             });
         } catch (e) {
             console.error(e);
@@ -38,6 +39,8 @@ export default function Profile({ onClose }) {
 
     if (loading) return <div className="modal-overlay">Yükleniyor...</div>;
 
+    const avatarUrl = `https://api.dicebear.com/9.x/bottts/svg?seed=${data.id || 'anon'}`;
+
     return (
         <div className="modal-overlay">
             <div className="modal-content">
@@ -48,9 +51,9 @@ export default function Profile({ onClose }) {
 
                 <div style={{ textAlign: 'center', marginBottom: '15px' }}>
                     <img
-                        src={data.avatar_url || getAvatar(data.display_name || 'user')}
+                        src={avatarUrl}
                         alt="Avatar"
-                        style={{ width: '80px', height: '80px', borderRadius: '50%', marginBottom: '10px' }}
+                        style={{ width: '80px', height: '80px', borderRadius: '50%', marginBottom: '10px', background: '#334155', border: '2px solid #3B82F6' }}
                     />
                 </div>
 

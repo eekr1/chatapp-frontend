@@ -44,8 +44,8 @@ export const friends = {
     getHistory: (friendId) => api.get(`/friends/history/${friendId}`)
 };
 
-export const getAvatar = (username) => {
-    return `https://api.dicebear.com/9.x/avataaars/svg?seed=${username}`;
+export const getAvatar = (seed) => {
+    return `https://api.dicebear.com/9.x/bottts/svg?seed=${seed || 'anon'}`;
 };
 
 export default api;

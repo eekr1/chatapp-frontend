@@ -213,3 +213,110 @@
     transform: scale(1);
   }
 }
+
+/* V13 Refined: Ice Breaker Preview (Pro UI) */
+.ice-breaker-preview {
+  position: absolute;
+  bottom: 75px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 40px);
+  max-width: 380px;
+  background: rgba(30, 41, 59, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 16px;
+  padding: 12px;
+  z-index: 1000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: slideUpFade 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.preview-text {
+  text-align: center;
+  font-size: 0.95rem;
+  color: #f8fafc;
+  line-height: 1.4;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+}
+
+.preview-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.preview-actions button {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.preview-actions button:hover {
+  background: var(--primary);
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.preview-actions button.btn-close {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.preview-actions button.btn-close:hover {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+}
+
+/* Add Friend Button Highlight */
+.btn-add-friend {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+  transition: all 0.2s;
+  margin: 10px auto;
+}
+
+.btn-add-friend:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+}
+
+.modal-content input, .modal-content textarea {
+  background: var(--bg-color) !important;
+  color: white !important;
+  border: 1px solid var(--border-color) !important;
+  width: 100%;
+}
+
