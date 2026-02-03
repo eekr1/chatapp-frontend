@@ -8,6 +8,7 @@ import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
 import MatchScreen from './screens/MatchScreen';
 import ChatScreen from './screens/ChatScreen';
+import FriendsScreen from './screens/FriendsScreen';
 
 // Legacy Device ID
 const getDeviceId = () => {
@@ -21,7 +22,7 @@ const getDeviceId = () => {
 const DEVICE_ID = getDeviceId();
 
 function App() {
-  // Navigation State: 'splash', 'home', 'matching', 'chat'
+  // Navigation State: 'splash', 'home', 'matching', 'chat', 'friends'
   const [screen, setScreen] = useState('splash');
 
   // App Data
@@ -29,8 +30,13 @@ function App() {
   const [onlineCount, setOnlineCount] = useState(0);
   const [status, setStatus] = useState('disconnected'); // idle, queued, matched, ended
 
+  // Friend Data
+  const [friendList, setFriendList] = useState([]);
+  const [friendRequests, setFriendRequests] = useState([]);
+  const [activeFriend, setActiveFriend] = useState(null); // The friend we are chatting with
+
   // Chat Data
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([]); // Array of message objects
   const [peerName, setPeerName] = useState(null);
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [roomId, setRoomId] = useState(null);
@@ -51,10 +57,19 @@ function App() {
       try {
         const res = await profile.getMe();
         setUser(res.data.user);
+        loadFriends(); // Load friends on init
       } catch (e) {
         localStorage.removeItem('session_token');
       }
     }
+  };
+
+  const loadFriends = async () => {
+    try {
+      const res = await friends.list();
+      setFriendList(res.data.friends || []);
+      setFriendRequests(res.data.incoming || []);
+    } catch (e) { console.error('Friends load error:', e); }
   };
 
   // --- WebSocket Logic ---
@@ -83,6 +98,8 @@ function App() {
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('[WS DEBUG]', data.type, data); // Debug all incoming
+
         switch (data.type) {
           case 'onlineCount': setOnlineCount(data.count); break;
           case 'queued':
@@ -98,17 +115,20 @@ function App() {
             setChatMode('anon');
             break;
           case 'message':
+            // Anon message
             setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
             setIsPeerTyping(false);
             break;
-          case 'typing':
-            if (data.fromUserId) {
-              // Logic for friends typing
-              setIsPeerTyping(true);
-            } else {
-              // Logic for anon typing
-              setIsPeerTyping(true);
+          case 'direct_message':
+            // Friend message
+            const senderId = data.fromUserId;
+            if (chatMode === 'friends' && activeFriend && activeFriend.user_id === senderId) {
+              setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
             }
+            // TODO: Show badge if not active
+            break;
+          case 'typing':
+            setIsPeerTyping(true);
             break;
           case 'stop_typing':
             setIsPeerTyping(false);
@@ -126,7 +146,7 @@ function App() {
       ws.current = null;
     };
 
-  }, [user]);
+  }, [user, chatMode, activeFriend]);
 
   useEffect(() => {
     if (user) connect();
@@ -140,34 +160,98 @@ function App() {
     setScreen('matching');
   };
 
+  const handleStartFriendChat = async (friend) => {
+    setActiveFriend(friend);
+    setChatMode('friends');
+    setPeerName(friend.display_name || friend.username);
+    setMessages([]);
+
+    // Load history
+    try {
+      const hist = await friends.getHistory(friend.user_id);
+      const histMsgs = (hist.data.messages || []).map(m => ({
+        from: m.sender_id === user.id ? 'me' : 'peer',
+        text: m.text
+      }));
+      setMessages(histMsgs);
+    } catch (e) { console.error('History error', e); }
+
+    setScreen('chat');
+  };
+
+  const handleAcceptRequest = async (id) => {
+    await friends.accept(id);
+    loadFriends();
+  };
+
+  const handleRejectRequest = async (id) => {
+    await friends.reject(id);
+    loadFriends();
+  };
+
   const handleLeaveChat = () => {
-    ws.current?.send(JSON.stringify({ type: 'leave' }));
+    if (chatMode === 'anon') {
+      ws.current?.send(JSON.stringify({ type: 'leave' }));
+    }
     setScreen('home');
     setMessages([]);
     setRoomId(null);
+    setActiveFriend(null);
   };
 
   const handleSendMessage = (text) => {
+    // Optimistic Update
+    setMessages(prev => [...prev, { from: 'me', text }]);
+
     if (chatMode === 'anon' && roomId) {
       ws.current?.send(JSON.stringify({ type: 'message', roomId, text }));
-      setMessages(prev => [...prev, { from: 'me', text }]);
+    } else if (chatMode === 'friends' && activeFriend) {
+      ws.current?.send(JSON.stringify({
+        type: 'direct_message',
+        targetUserId: activeFriend.user_id,
+        text
+      }));
     }
-    // TODO: Add Friend Chat implementation here reusing the new ChatScreen
   };
 
   const handleTyping = () => {
     if (ws.current?.readyState === WebSocket.OPEN) {
-      // Send typing event
-      ws.current.send(JSON.stringify({ type: 'typing' }));
+      const payload = chatMode === 'friends' && activeFriend
+        ? { type: 'typing', targetUserId: activeFriend.user_id }
+        : { type: 'typing' }; // Anon usually implies target through Server room knowledge?
+      // Actually Server 'typing' handler (Step 53 view) requires 'targetUserId' for friends.
+      // For anon, it sends {type:'typing'} without targetId and Server handles room relay?
+      // Let's re-verify Step 53 code snippet:
+      // if (data.targetUserId) { ... } else { // Anon Typing logic ... }
+      // So if I send {type:'typing'}, it hits Anon logic. Correct.
+
+      ws.current.send(JSON.stringify(payload));
+
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
-        ws.current.send(JSON.stringify({ type: 'stop_typing' }));
+        const stopPayload = chatMode === 'friends' && activeFriend
+          ? { type: 'stop_typing', targetUserId: activeFriend.user_id }
+          : { type: 'stop_typing' };
+        ws.current.send(JSON.stringify(stopPayload));
       }, 1000);
     }
   };
 
+  const handleReport = () => {
+    const reason = prompt("Lütfen rapor sebebini belirtin (spam, hakaret, vb.):");
+    if (reason && ws.current?.readyState === WebSocket.OPEN) {
+      // Assuming backend supports 'report' type
+      if (chatMode === 'anon' && roomId) {
+        ws.current.send(JSON.stringify({ type: 'report', roomId, reason }));
+      } else if (chatMode === 'friends' && activeFriend) {
+        ws.current.send(JSON.stringify({ type: 'report', targetUserId: activeFriend.user_id, reason }));
+      }
+      alert('Raporunuz iletildi.');
+    }
+  };
+
   // --- Render Flow ---
-  if (!user) return <Auth onLogin={setUser} />; // We need to style Auth page too later!
+  if (!user) return <Auth onLogin={setUser} />;
 
   // 1. Splash
   if (screen === 'splash') {
@@ -181,8 +265,25 @@ function App() {
         onlineCount={onlineCount}
         onSelectMode={(mode) => {
           if (mode === 'anon') handleStartAnon();
-          else alert('Arkadaş modu bu demoda henüz aktif değil (Sadece UI).');
+          else if (mode === 'friends') {
+            loadFriends();
+            setScreen('friends');
+          }
         }}
+      />
+    );
+  }
+
+  // 5. Friends
+  if (screen === 'friends') {
+    return (
+      <FriendsScreen
+        friends={friendList}
+        requests={friendRequests}
+        onBack={() => setScreen('home')}
+        onChat={handleStartFriendChat}
+        onAccept={handleAcceptRequest}
+        onReject={handleRejectRequest}
       />
     );
   }
@@ -192,9 +293,7 @@ function App() {
     return (
       <MatchScreen
         onCancel={handleLeaveChat}
-        onMatchMock={() => {
-          // Dev-only manual trigger if needed
-        }}
+        onMatchMock={() => { }}
       />
     );
   }
@@ -208,8 +307,12 @@ function App() {
         peerName={peerName}
         onSend={handleSendMessage}
         onLeave={handleLeaveChat}
+        onNewMatch={handleStartAnon}
+        onReport={handleReport}
         isTyping={isPeerTyping}
         onTyping={handleTyping}
+        isFriendMode={chatMode === 'friends'}
+        isChatEnded={status === 'ended'}
       />
     );
   }

@@ -19,11 +19,13 @@ const ChatScreen = ({
     messages,
     onSend,
     onLeave,
+    onNewMatch, // New prop
+    onReport,   // New prop
     peerName,
     isTyping,
     onTyping,
-    // Friend specific props
-    isFriendMode = false
+    isFriendMode = false,
+    isChatEnded = false // New prop
 }) => {
     const [inputValue, setInputValue] = useState("");
     const [randomName, setRandomName] = useState("");
@@ -40,11 +42,11 @@ const ChatScreen = ({
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, isTyping]);
+    }, [messages, isTyping, isChatEnded]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (!inputValue.trim()) return;
+        if (!inputValue.trim() || isChatEnded) return;
         onSend(inputValue);
         setInputValue("");
     };
@@ -74,17 +76,27 @@ const ChatScreen = ({
                     </div>
                     <div>
                         <h3 style={{ fontSize: '1rem', color: isFriendMode ? 'var(--accent)' : 'var(--primary)' }}>{displayName}</h3>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>● Online</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>
+                            {isChatEnded ? '🔴 Sonlandı' : '● Online'}
+                        </span>
                     </div>
                 </div>
 
-                <button onClick={onLeave} style={{
-                    background: 'rgba(255,56,96,0.1)', color: 'var(--danger)', border: 'none',
-                    width: 36, height: 36, borderRadius: '50%', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                    ✕
-                </button>
+                <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={onReport} style={{
+                        background: 'transparent', color: 'var(--danger)', border: 'none',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '1.5rem'
+                    }} title="Raporla">
+                        ⚠️
+                    </button>
+                    <button onClick={onLeave} style={{
+                        background: 'rgba(255,56,96,0.1)', color: 'var(--danger)', border: 'none',
+                        width: 36, height: 36, borderRadius: '50%', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        ✕
+                    </button>
+                </div>
             </GlassCard>
 
             {/* Messages Area */}
@@ -103,42 +115,64 @@ const ChatScreen = ({
                 <div ref={endRef}></div>
             </div>
 
-            {/* Input Area */}
-            <div style={{
-                position: 'absolute', bottom: 0, left: 0, right: 0,
-                padding: 20, background: 'linear-gradient(to top, var(--bg-deep) 40%, transparent)',
-                zIndex: 50
-            }}>
-                <GlassCard style={{ padding: 10, borderRadius: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <button style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 8 }}>
-                        <CameraIcon />
-                    </button>
+            {/* Chat Ended Overlay */}
+            {isChatEnded && (
+                <div className="animate-fade-in" style={{
+                    position: 'absolute', bottom: 0, left: 0, right: 0,
+                    background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)',
+                    padding: 30, zIndex: 60, borderTop: '1px solid var(--danger)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 15
+                }}>
+                    <h3 style={{ color: 'var(--danger)', fontSize: '1.2rem' }}>Sohbet Sonlandı</h3>
+                    <div style={{ display: 'flex', gap: 15, width: '100%' }}>
+                        <button onClick={onLeave} className="btn-neon" style={{ flex: 1, borderColor: 'var(--text-dim)', color: 'var(--text-dim)' }}>
+                            Ana Sayfa
+                        </button>
+                        <button onClick={onNewMatch} className="btn-solid-purple" style={{ flex: 1 }}>
+                            Yeni Eşleşme
+                        </button>
+                    </div>
+                </div>
+            )}
 
-                    <form style={{ flex: 1, display: 'flex' }} onSubmit={handleSubmit}>
-                        <input
-                            className="input-glass"
-                            style={{ flex: 1, border: 'none', padding: '10px 0', background: 'transparent' }}
-                            placeholder="Bir şeyler yaz..."
-                            value={inputValue}
-                            onChange={handleInput}
-                        />
-                    </form>
+            {/* Input Area (Hidden if Ended) */}
+            {!isChatEnded && (
+                <div style={{
+                    position: 'absolute', bottom: 0, left: 0, right: 0,
+                    padding: 20, background: 'linear-gradient(to top, var(--bg-deep) 40%, transparent)',
+                    zIndex: 50
+                }}>
+                    <GlassCard style={{ padding: 10, borderRadius: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <button style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 8 }}>
+                            <CameraIcon />
+                        </button>
 
-                    <button
-                        onClick={handleSubmit}
-                        style={{
-                            background: 'var(--primary)', border: 'none', borderRadius: '50%',
-                            width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            color: '#000', cursor: 'pointer', boxShadow: 'var(--glow-cyan)',
-                            transition: 'transform 0.2s'
-                        }}
-                        onMouseDown={e => e.currentTarget.style.transform = 'scale(0.9)'}
-                        onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-                    >
-                        <SendIcon />
-                    </button>
-                </GlassCard>
-            </div>
+                        <form style={{ flex: 1, display: 'flex' }} onSubmit={handleSubmit}>
+                            <input
+                                className="input-glass"
+                                style={{ flex: 1, border: 'none', padding: '10px 0', background: 'transparent' }}
+                                placeholder="Bir şeyler yaz..."
+                                value={inputValue}
+                                onChange={handleInput}
+                            />
+                        </form>
+
+                        <button
+                            onClick={handleSubmit}
+                            style={{
+                                background: 'var(--primary)', border: 'none', borderRadius: '50%',
+                                width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: '#000', cursor: 'pointer', boxShadow: 'var(--glow-cyan)',
+                                transition: 'transform 0.2s'
+                            }}
+                            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.9)'}
+                            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                            <SendIcon />
+                        </button>
+                    </GlassCard>
+                </div>
+            )}
 
             {/* Typing animation dots styles if not global */}
             <style>{`
