@@ -214,17 +214,24 @@ function App() {
   };
 
   const handleSendMessage = (text) => {
+    console.log('[App] handleSendMessage:', text, 'Mode:', chatMode);
+
     // Optimistic Update
     setMessages(prev => [...prev, { from: 'me', text }]);
 
     if (chatMode === 'anon' && roomId) {
       ws.current?.send(JSON.stringify({ type: 'message', roomId, text }));
     } else if (chatMode === 'friends' && activeFriend) {
+      console.log('[App] Sending DM to:', activeFriend.user_id);
+      if (!activeFriend.user_id) console.error('[App] activeFriend has no user_id!', activeFriend);
+
       ws.current?.send(JSON.stringify({
         type: 'direct_message',
         targetUserId: activeFriend.user_id,
         text
       }));
+    } else {
+      console.warn('[App] Message not sent. State invalid:', { chatMode, roomId, activeFriend });
     }
   };
 
