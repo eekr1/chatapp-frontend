@@ -313,10 +313,19 @@ function App() {
     // V13: Load History before joining
     try {
       const historyRes = await friends.getHistory(targetUser.userId);
-      setFriendChats(prev => ({
-        ...prev,
-        [targetUser.userId]: historyRes.data.messages
-      }));
+      const serverMsgs = historyRes.data.messages || [];
+
+      setFriendChats(prev => {
+        const localMsgs = prev[targetUser.userId] || [];
+        // Merge strategy: server history is truth, but keep very recent local messages
+        const lastServerTime = serverMsgs.length > 0 ? serverMsgs[serverMsgs.length - 1].timestamp : 0;
+        const freshLocalMsgs = localMsgs.filter(m => m.timestamp > lastServerTime);
+
+        return {
+          ...prev,
+          [targetUser.userId]: [...serverMsgs, ...freshLocalMsgs]
+        };
+      });
     } catch (e) {
       console.error('History load failed', e);
     }
@@ -326,7 +335,6 @@ function App() {
     // Optimistically update UI
     setActiveFriend(targetUser);
     setChatTab('friends');
-    setShowFriendsModal(false);
   };
 
   const handleAddFriend = async () => {
