@@ -24,7 +24,6 @@ const ChatScreen = ({
     peerName,
     isTyping,
     onTyping,
-    onTyping,
     isFriendMode = false,
     isChatEnded = false, // New prop
     onSendImage, // New
