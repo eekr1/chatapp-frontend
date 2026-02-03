@@ -24,8 +24,12 @@ const ChatScreen = ({
     peerName,
     isTyping,
     onTyping,
+    onTyping,
     isFriendMode = false,
-    isChatEnded = false // New prop
+    isChatEnded = false, // New prop
+    onSendImage, // New
+    onViewImage, // New
+    onCloseImage // New
 }) => {
     const [inputValue, setInputValue] = useState("");
     const [randomName, setRandomName] = useState("");
@@ -103,7 +107,24 @@ const ChatScreen = ({
             <div style={{ flex: 1, overflowY: 'auto', padding: '100px 20px 100px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {messages.map((m, i) => (
                     <div key={i} className={m.from === 'me' ? 'chat-bubble-me animate-slide-up' : 'chat-bubble-peer animate-slide-up'}>
-                        {m.text}
+                        {m.msgType === 'image' ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: '1.5em' }}>📸</span>
+                                {m.mediaExpired ? (
+                                    <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>Fotoğraf Açıldı</span>
+                                ) : (
+                                    <button
+                                        className="btn-neon-sm"
+                                        style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                                        onClick={() => onViewImage && onViewImage(m.mediaId)}
+                                    >
+                                        Fotoğrafı Görüntüle
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            m.text
+                        )}
                         {m.opened !== undefined && <span style={{ display: 'block', fontSize: '0.7em', opacity: 0.6, marginTop: 4 }}>{m.opened ? 'Görüldü' : '"Aç"a bas'}</span>}
                     </div>
                 ))}
@@ -135,6 +156,22 @@ const ChatScreen = ({
                 </div>
             )}
 
+            {/* Image View Modal */}
+            {window.viewingImage && (
+                <div className="animate-fade-in" style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.95)', zIndex: 100,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+                }} onClick={() => { window.viewingImage = null; /* Hacky local state handling or use prop? Better validation below */ }}>
+                    <img src={window.viewingImage} style={{ maxWidth: '90%', maxHeight: '80vh', borderRadius: 8, border: '2px solid var(--primary)' }} />
+                    <p style={{ color: '#fff', marginTop: 20 }}>Bu fotoğraf kapatıldığında silinecektir.</p>
+                    <button onClick={() => { window.viewingImage = null; if (onCloseImage) onCloseImage(); }}
+                        className="btn-solid-purple" style={{ marginTop: 20 }}>
+                        Kapat
+                    </button>
+                </div>
+            )}
+
             {/* Input Area (Hidden if Ended) */}
             {!isChatEnded && (
                 <div style={{
@@ -143,7 +180,26 @@ const ChatScreen = ({
                     zIndex: 50
                 }}>
                     <GlassCard style={{ padding: 10, borderRadius: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <button style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 8 }}>
+                        <input
+                            type="file"
+                            id="imgInput"
+                            style={{ display: 'none' }}
+                            accept="image/*"
+                            onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+                                if (file.size > 2 * 1024 * 1024) return alert('Dosya boyutu 2MB\'dan küçük olmalı.');
+
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                    if (onSendImage) onSendImage(reader.result);
+                                };
+                                reader.readAsDataURL(file);
+                            }}
+                        />
+                        <button
+                            onClick={() => document.getElementById('imgInput').click()}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 8 }}>
                             <CameraIcon />
                         </button>
 

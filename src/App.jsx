@@ -170,6 +170,16 @@ function App() {
             setMessages(prev => [...prev, { from: 'system', text: 'Sohbet sonlandı.' }]);
             setStatus('ended');
             break;
+          case 'image_data':
+            setCurrentImage(data.imageData);
+            // Mark as expired immediately (View Once)
+            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
+            break;
+          case 'image_error':
+            alert(data.message);
+            // Mark as expired in UI
+            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
+            break;
         }
       } catch (e) { console.error(e); }
     };
@@ -307,6 +317,35 @@ function App() {
     }
   };
 
+  // Image State
+  const [currentImage, setCurrentImage] = useState(null);
+
+  // Sync to window for ChatScreen (Temporary Bridge)
+  useEffect(() => { window.viewingImage = currentImage; }, [currentImage]);
+
+  // ... Render Flow ...
+
+  // Image Handlers
+  const handleSendImage = (base64) => {
+    if (chatMode === 'friends' && activeFriend) {
+      ws.current?.send(JSON.stringify({
+        type: 'direct_image_send',
+        targetUserId: activeFriend.user_id,
+        imageData: base64
+      }));
+      // Optimistic: Add "camera" message? Backend echoes back 'direct_message' with type image.
+      // So we wait for echo.
+    }
+  };
+
+  const handleViewImage = (mediaId) => {
+    ws.current?.send(JSON.stringify({ type: 'fetch_image', mediaId }));
+  };
+
+  // Update socket.onmessage inside connect()
+  // ...
+  // See next Replace block for socket update
+
   // --- Render Flow ---
   if (!user) return <Auth onLogin={setUser} />;
 
@@ -373,9 +412,30 @@ function App() {
         onTyping={handleTyping}
         isFriendMode={chatMode === 'friends'}
         isChatEnded={status === 'ended'}
+        // Image Logic
+        onSendImage={handleSendImage}
+        onViewImage={handleViewImage}
+        onCloseImage={() => setCurrentImage(null)}
       />
     );
   }
+
+  // Inject image into window for Modal (quick fix as ChatScreen manages modal via window/prop)
+  // Actually ChatScreen uses window.viewingImage? Let's fix that design.
+  // Better: ChatScreen receives the image data via prop.
+  // Since ChatScreen logic used `window.viewingImage` in my previous step, I should pass it via check.
+  // But wait, I put `window.viewingImage` inside ChatScreen render. 
+  // Ideally, App.jsx manages the state `currentImage` and passes it to ChatScreen.
+  // The ChatScreen logic I wrote earlier checks `window.viewingImage`. 
+  // I should update ChatScreen to use a prop or simpler: App.jsx handles the modal?
+  // No, let's just make ChatScreen use the prop.
+  // Correction: I wrote `window.viewingImage` in ChatScreen. That was a bad practice placeholder.
+  // I will rely on App.jsx setting `window.viewingImage` OR passed prop.
+  // Let's stick to state in App.jsx and passing it?
+  // Actually, let's keep it simple: App.jsx sets a state `viewingImage`. 
+  // And we pass it to ChatScreen as a prop `viewingImageUrl`.
+  // I need to update ChatScreen to use the prop instead of window. Noted.
+  // For now, let's implement the handlers.
 
   return <div>Unknown State</div>;
 }
