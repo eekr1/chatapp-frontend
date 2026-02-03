@@ -36,7 +36,7 @@ export default function Auth({ onLogin }) {
     return (
         <div className="login-container">
             <div className="login-card">
-                <h1>AnonChat v2</h1>
+                <h1>TalkX</h1>
                 <p className="subtitle">{isLogin ? 'Tekrar Hoşgeldin!' : 'Yeni Hesap Oluştur'}</p>
 
                 <form onSubmit={handleSubmit}>
