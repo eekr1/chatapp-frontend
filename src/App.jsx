@@ -216,17 +216,18 @@ function App() {
 
   const handleTyping = () => {
     if (ws.current?.readyState === WebSocket.OPEN) {
-      const payload = chatMode === 'friends' && activeFriend
-        ? { type: 'typing', targetUserId: activeFriend.user_id }
-        : { type: 'typing' }; // Anon usually implies target through Server room knowledge?
-      // Actually Server 'typing' handler (Step 53 view) requires 'targetUserId' for friends.
-      // For anon, it sends {type:'typing'} without targetId and Server handles room relay?
-      // Let's re-verify Step 53 code snippet:
-      // if (data.targetUserId) { ... } else { // Anon Typing logic ... }
-      // So if I send {type:'typing'}, it hits Anon logic. Correct.
+      const now = Date.now();
+      // Only send 'typing' if it's been > 2s since last time
+      if (now - lastTypingSentRef.current > 2000) {
+        const payload = chatMode === 'friends' && activeFriend
+          ? { type: 'typing', targetUserId: activeFriend.user_id }
+          : { type: 'typing' };
 
-      ws.current.send(JSON.stringify(payload));
+        ws.current.send(JSON.stringify(payload));
+        lastTypingSentRef.current = now;
+      }
 
+      // Always reset the stop timer on every keystroke
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
         const stopPayload = chatMode === 'friends' && activeFriend
