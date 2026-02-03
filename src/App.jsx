@@ -229,17 +229,45 @@ function App() {
             break;
 
           case 'image_sent':
-            setMessages(prev => [...prev, { from: 'me', msgType: 'image_sent_ack', text: '📸 Fotoğraf gönderildi.' }]);
+            if (data.targetUserId) {
+              setFriendChats(prev => {
+                const msgs = prev[data.targetUserId] || [];
+                return {
+                  ...prev, [data.targetUserId]: [...msgs, {
+                    from: 'me',
+                    msgType: 'image_sent_ack',
+                    text: '📸 Fotoğraf gönderildi.',
+                    timestamp: Date.now()
+                  }]
+                };
+              });
+            } else {
+              setMessages(prev => [...prev, { from: 'me', msgType: 'image_sent_ack', text: '📸 Fotoğraf gönderildi.' }]);
+            }
             break;
 
           case 'image_data':
             setViewingImage(data.imageData);
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, opened: true } : m));
+            setFriendChats(prev => {
+              const next = { ...prev };
+              Object.keys(next).forEach(uid => {
+                next[uid] = next[uid].map(m => m.mediaId === data.mediaId ? { ...m, opened: true } : m);
+              });
+              return next;
+            });
             break;
 
           case 'image_error':
             alert(data.message);
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, opened: true } : m));
+            setFriendChats(prev => {
+              const next = { ...prev };
+              Object.keys(next).forEach(uid => {
+                next[uid] = next[uid].map(m => m.mediaId === data.mediaId ? { ...m, opened: true } : m);
+              });
+              return next;
+            });
             break;
 
           case 'direct_matched':
