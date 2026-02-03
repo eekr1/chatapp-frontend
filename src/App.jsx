@@ -235,7 +235,13 @@ function App() {
             const senderId = data.fromUserId;
             setFriendChats(prev => {
               const currentMsgs = prev[senderId] || [];
-              const newMessage = { from: 'peer', text: data.text, timestamp: Date.now() };
+              const newMessage = {
+                from: 'peer',
+                text: data.text,
+                msgType: data.msgType || 'text',
+                mediaId: data.mediaId,
+                timestamp: Date.now()
+              };
               // Avoid duplicates if history was just loaded
               return {
                 ...prev,
@@ -382,7 +388,11 @@ function App() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Compression
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Dosya boyutu çok büyük (Max 2MB)');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
@@ -401,12 +411,25 @@ function App() {
         ctx.drawImage(img, 0, 0, width, height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
-        if (ws.current?.readyState === WebSocket.OPEN && roomId) {
-          ws.current.send(JSON.stringify({
-            type: 'image_send',
-            roomId,
-            imageData: dataUrl
-          }));
+        if (ws.current?.readyState === WebSocket.OPEN) {
+          if (chatTab === 'friends' && activeFriend) {
+            ws.current.send(JSON.stringify({
+              type: 'direct_image_send',
+              targetUserId: activeFriend.userId,
+              imageData: dataUrl
+            }));
+            // Optimistic update
+            setFriendChats(prev => ({
+              ...prev,
+              [activeFriend.userId]: [...(prev[activeFriend.userId] || []), { from: 'me', text: '📸 Fotoğraf', msgType: 'image', timestamp: Date.now() }]
+            }));
+          } else if (chatTab === 'anon' && roomId) {
+            ws.current.send(JSON.stringify({
+              type: 'image_send',
+              roomId,
+              imageData: dataUrl
+            }));
+          }
         }
       };
       img.src = event.target.result;
@@ -422,8 +445,12 @@ function App() {
   };
 
   const handleReportSubmit = (reason) => {
-    if (ws.current?.readyState === WebSocket.OPEN && roomId) {
-      ws.current.send(JSON.stringify({ type: 'report', roomId, reason }));
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      if (chatTab === 'anon' && roomId) {
+        ws.current.send(JSON.stringify({ type: 'report', roomId, reason }));
+      } else if (chatTab === 'friends' && activeFriend) {
+        ws.current.send(JSON.stringify({ type: 'report', targetUserId: activeFriend.userId, reason }));
+      }
       alert('Raporunuz alındı. Teşekkürler.');
       setShowReportModal(false);
     }
@@ -676,8 +703,20 @@ function App() {
                   </div>
                   <div className="friend-messages-container">
                     {(friendChats[activeFriend.userId] || []).map((m, i) => (
-                      <div key={i} className={`message-bubble ${m.from}`}>
-                        {m.text}
+                      <div key={i} className={`message-bubble ${m.from} ${m.msgType === 'image_sent_ack' ? 'success-bar' : ''}`}>
+                        {m.msgType === 'image' ? (
+                          <div style={{ textAlign: 'center', minWidth: 150 }}>
+                            <div style={{ marginBottom: 5, fontSize: '0.85rem', opacity: 0.8 }}>🔒 Tek Seferlik Fotoğraf</div>
+                            <button
+                              className="btn-primary"
+                              style={{ width: '100%', fontSize: '0.9rem', padding: '8px', background: m.opened ? '#475569' : 'var(--primary)' }}
+                              onClick={() => requestImage(m.mediaId)}
+                              disabled={m.opened}
+                            >
+                              {m.opened ? 'Açıldı (Silindi)' : '📸 Görüntüle'}
+                            </button>
+                          </div>
+                        ) : (m.text)}
                       </div>
                     ))}
                   </div>
@@ -704,14 +743,6 @@ function App() {
                       </div>
                     </div>
                   )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                    onChange={handleFileSelect}
-                  />
-                  <button type="button" className="btn-ghost" title="Fotoğraf" onClick={() => fileInputRef.current?.click()}>📷</button>
                   <button type="button" className="btn-ghost" title="Buz Kırıcı / Eğlence" onClick={() => handleIceBreaker('shuffle')}>🎲</button>
                   <input value={inputText} onChange={handleInputChange} placeholder="Mesaj..." autoFocus />
                   <button type="submit" className="send-btn">➤</button>
@@ -739,10 +770,23 @@ function App() {
             )
           ) : (
             activeFriend && (
-              <form className="input-group" onSubmit={sendMessage}>
-                <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Mesaj..." autoFocus />
-                <button type="submit" className="send-btn">➤</button>
-              </form>
+              <div className="friend-controls-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <form className="input-group" onSubmit={sendMessage}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    onChange={handleFileSelect}
+                  />
+                  <button type="button" className="btn-ghost" title="Fotoğraf" onClick={() => fileInputRef.current?.click()}>📷</button>
+                  <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Mesaj..." autoFocus />
+                  <button type="submit" className="send-btn">➤</button>
+                </form>
+                <div className="secondary-controls" style={{ justifyContent: 'flex-end', marginTop: 0 }}>
+                  <button type="button" className="btn-ghost" title="Raporla" style={{ color: '#EF4444' }} onClick={() => setShowReportModal(true)}>⚠️ Raporla</button>
+                </div>
+              </div>
             )
           )}
         </div>
