@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
 
-const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject }) => {
+const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject, unreadCounts = {} }) => {
     const [tab, setTab] = useState('list'); // 'list' or 'requests'
 
     return (
@@ -40,22 +40,26 @@ const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject }
                             <p style={{ fontSize: '0.9rem' }}>Anonim sohbetlerden ekleyebilirsin.</p>
                         </div>
                     ) : (
-                        friends.map(f => (
-                            <GlassCard key={f.user_id} className="animate-slide-up" style={{ padding: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
-                                    <div style={{ width: 50, height: 50, borderRadius: '50%', background: 'var(--bg-dark)', border: '2px solid var(--accent)', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem' }}>
-                                        👤
+                        friends.map(f => {
+                            const count = unreadCounts[f.user_id] || 0;
+                            return (
+                                <GlassCard key={f.user_id} className="animate-slide-up" style={{ padding: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
+                                        <div style={{ width: 50, height: 50, borderRadius: '50%', background: 'var(--bg-dark)', border: '2px solid var(--accent)', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem', position: 'relative' }}>
+                                            👤
+                                            {count > 0 && <span style={{ position: 'absolute', top: -5, right: -5, background: 'var(--danger)', color: 'white', fontSize: '0.7rem', width: 20, height: 20, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', boxShadow: '0 0 5px var(--danger)' }}>{count}</span>}
+                                        </div>
+                                        <div>
+                                            <h4 style={{ color: 'white', fontSize: '1.1rem' }}>{f.display_name || f.username}</h4>
+                                            <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>@{f.username}</span>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h4 style={{ color: 'white', fontSize: '1.1rem' }}>{f.display_name || f.username}</h4>
-                                        <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>@{f.username}</span>
-                                    </div>
-                                </div>
-                                <button onClick={() => onChat(f)} className="btn-neon" style={{ padding: '8px 16px', fontSize: '0.9rem' }}>
-                                    MESAJ
-                                </button>
-                            </GlassCard>
-                        ))
+                                    <button onClick={() => onChat(f)} className="btn-neon" style={{ padding: '8px 16px', fontSize: '0.9rem' }}>
+                                        MESAJ
+                                    </button>
+                                </GlassCard>
+                            );
+                        })
                     )
                 )}
 

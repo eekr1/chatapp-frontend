@@ -19,7 +19,7 @@ const FriendsIcon = () => (
     </svg>
 );
 
-const HomeScreen = ({ onSelectMode, onlineCount }) => {
+const HomeScreen = ({ onSelectMode, onlineCount, unreadCount = 0 }) => {
     return (
         <div className="screen-container animate-fade-in" style={{ justifyContent: 'space-between' }}>
 
@@ -78,9 +78,22 @@ const HomeScreen = ({ onSelectMode, onlineCount }) => {
                         borderRadius: '50%',
                         background: 'linear-gradient(135deg, rgba(168,85,247,0.05), rgba(168,85,247,0.15))',
                         border: '2px solid rgba(168,85,247,0.3)',
-                        boxShadow: '0 0 30px rgba(168,85,247,0.15)'
+                        boxShadow: '0 0 30px rgba(168,85,247,0.15)',
+                        position: 'relative'
                     }}>
                         <FriendsIcon />
+                        {/* Badge */}
+                        {unreadCount > 0 && (
+                            <div className="animate-pulse" style={{
+                                position: 'absolute', top: 10, right: 10,
+                                background: 'var(--danger)', color: 'white',
+                                width: 32, height: 32, borderRadius: '50%',
+                                display: 'flex', justifyContent: 'center', alignItems: 'center',
+                                fontWeight: 'bold', boxShadow: '0 0 10px var(--danger)'
+                            }}>
+                                {unreadCount}
+                            </div>
+                        )}
                     </GlassCard>
                     <h3 style={{ fontSize: '1.2rem', color: 'var(--accent)', letterSpacing: 1 }}>ARKADAŞLAR</h3>
                 </div>

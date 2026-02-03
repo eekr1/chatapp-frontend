@@ -34,6 +34,7 @@ function App() {
   const [friendList, setFriendList] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
   const [activeFriend, setActiveFriend] = useState(null); // The friend we are chatting with
+  const [unreadCounts, setUnreadCounts] = useState({}); // { userId: count }
 
   // Chat Data
   const [messages, setMessages] = useState([]); // Array of message objects
@@ -45,6 +46,7 @@ function App() {
   // Refs
   const ws = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const lastTypingSentRef = useRef(0);
 
   // --- Auth & Init ---
   useEffect(() => {
@@ -124,8 +126,13 @@ function App() {
             const senderId = data.fromUserId;
             if (chatMode === 'friends' && activeFriend && activeFriend.user_id === senderId) {
               setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
+            } else {
+              // Increment unread count
+              setUnreadCounts(prev => ({
+                ...prev,
+                [senderId]: (prev[senderId] || 0) + 1
+              }));
             }
-            // TODO: Show badge if not active
             break;
           case 'typing':
             setIsPeerTyping(true);
@@ -165,6 +172,13 @@ function App() {
     setChatMode('friends');
     setPeerName(friend.display_name || friend.username);
     setMessages([]);
+
+    // Clear unread
+    setUnreadCounts(prev => {
+      const newCounts = { ...prev };
+      delete newCounts[friend.user_id];
+      return newCounts;
+    });
 
     // Load history
     try {
@@ -261,9 +275,11 @@ function App() {
 
   // 2. Home
   if (screen === 'home') {
+    const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
     return (
       <HomeScreen
         onlineCount={onlineCount}
+        unreadCount={totalUnread}
         onSelectMode={(mode) => {
           if (mode === 'anon') handleStartAnon();
           else if (mode === 'friends') {
@@ -281,6 +297,7 @@ function App() {
       <FriendsScreen
         friends={friendList}
         requests={friendRequests}
+        unreadCounts={unreadCounts}
         onBack={() => setScreen('home')}
         onChat={handleStartFriendChat}
         onAccept={handleAcceptRequest}
