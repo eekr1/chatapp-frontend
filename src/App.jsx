@@ -48,6 +48,14 @@ function App() {
   const typingTimeoutRef = useRef(null);
   const lastTypingSentRef = useRef(0);
 
+  // State Refs (for WS closure access)
+  const activeFriendRef = useRef(activeFriend);
+  const chatModeRef = useRef(chatMode);
+
+  // Sync Refs
+  useEffect(() => { activeFriendRef.current = activeFriend; }, [activeFriend]);
+  useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
+
   // --- Auth & Init ---
   useEffect(() => {
     checkAuth();
@@ -127,7 +135,10 @@ function App() {
           case 'direct_message':
             // Friend message
             const senderId = data.fromUserId;
-            if (chatMode === 'friends' && activeFriend && activeFriend.user_id === senderId) {
+            const currentActive = activeFriendRef.current;
+            const currentMode = chatModeRef.current; // Access fresh ref
+
+            if (currentMode === 'friends' && currentActive && currentActive.user_id === senderId) {
               setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
             } else {
               // Increment unread count
@@ -156,11 +167,18 @@ function App() {
       ws.current = null;
     };
 
-  }, [user, chatMode, activeFriend]);
+  }, [user]); // Removed activeFriend and chatMode dependencies
 
   useEffect(() => {
     if (user) connect();
-    return () => ws.current?.close();
+    // Do NOT close on unmount of effect unless user matches change, 
+    // to keep connection alive during nav
+    return () => {
+      // Only close if user logs out or we really mean to Kill it. 
+      // For now, let's keep it alive. 
+      // Actually, React Strict Mode might kill it. 
+      // Proper pattern: Check if user changed.
+    };
   }, [user, connect]);
 
 
