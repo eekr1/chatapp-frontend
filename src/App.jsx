@@ -229,21 +229,9 @@ function App() {
             break;
 
           case 'image_sent':
-            if (data.targetUserId) {
-              setFriendChats(prev => {
-                const msgs = prev[data.targetUserId] || [];
-                return {
-                  ...prev, [data.targetUserId]: [...msgs, {
-                    from: 'me',
-                    msgType: 'image_sent_ack',
-                    text: '📸 Fotoğraf gönderildi.',
-                    timestamp: Date.now()
-                  }]
-                };
-              });
-            } else {
-              setMessages(prev => [...prev, { from: 'me', msgType: 'image_sent_ack', text: '📸 Fotoğraf gönderildi.' }]);
-            }
+            // Duplicate bubble removed. 
+            // The image bubble (type 'image') is already added optimistically or via image_data event.
+            // We do not need a secondary text bubble saying "Photo sent".
             break;
 
           case 'image_data':
