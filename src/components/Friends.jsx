@@ -102,7 +102,14 @@ export default function Friends({ onClose, onStartChat }) {
                                     <span className="uname">@{u.username}</span>
                                 </div>
                                 <div>
-                                    <button onClick={() => onStartChat(u.username)} className="btn-sm-primary" title="Mesaj At">💬</button>
+                                    <button onClick={() => {
+                                        onStartChat({
+                                            userId: u.user_id,
+                                            nickname: u.display_name || u.username,
+                                            username: u.username
+                                        });
+                                        onClose();
+                                    }} className="btn-sm-primary" title="Mesaj At">💬</button>
                                     <button onClick={() => handleReject(u.user_id)} className="btn-sm-danger" title="Sil">🗑️</button>
                                 </div>
                             </div>

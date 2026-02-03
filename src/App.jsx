@@ -57,6 +57,12 @@ function App() {
   // V11: Report UI
   const [showReportModal, setShowReportModal] = useState(false);
 
+  // V13: Separation of Chats
+  const [chatTab, setChatTab] = useState('anon'); // 'anon' or 'friends'
+  const [friendChats, setFriendChats] = useState({}); // { [userId]: messages[] }
+  const [activeFriend, setActiveFriend] = useState(null); // { userId, nickname, username, conversationId }
+  const [unreadFriends, setUnreadFriends] = useState(new Set());
+
   const playNotification = () => {
     try {
       const audio = new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3');
@@ -213,6 +219,27 @@ function App() {
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, opened: true } : m));
             break;
 
+          case 'direct_matched':
+            setActiveFriend({
+              userId: data.targetUserId,
+              nickname: data.targetUsername,
+              conversationId: data.conversationId
+            });
+            setChatTab('friends');
+            break;
+
+          case 'direct_message':
+            playNotification();
+            const senderId = data.fromUserId;
+            setFriendChats(prev => ({
+              ...prev,
+              [senderId]: [...(prev[senderId] || []), { from: 'peer', text: data.text, timestamp: Date.now() }]
+            }));
+            if (chatTab !== 'friends' || activeFriend?.userId !== senderId) {
+              setUnreadFriends(prev => new Set(prev).add(senderId));
+            }
+            break;
+
           case 'ended':
             if (status === 'queued') return;
             setStatus('ended');
@@ -262,22 +289,23 @@ function App() {
     ws.current?.send(JSON.stringify({ type: 'joinQueue' }));
   };
 
-  const handleStartChat = async (targetUsername) => {
+  const handleStartChat = async (targetUser) => {
     // V13: Load History before joining
     try {
-      // Find friend user_id from list or we can just fetch history by username if API supports it.
-      // My API currently uses friendId. Let's find it.
-      const res = await friends.list();
-      const friend = res.data.friends.find(f => f.username === targetUsername);
-      if (friend) {
-        const historyRes = await friends.getHistory(friend.user_id);
-        setMessages(historyRes.data.messages);
-      }
+      const historyRes = await friends.getHistory(targetUser.userId);
+      setFriendChats(prev => ({
+        ...prev,
+        [targetUser.userId]: historyRes.data.messages
+      }));
     } catch (e) {
       console.error('History load failed', e);
     }
 
-    ws.current?.send(JSON.stringify({ type: 'joinDirect', targetUsername }));
+    ws.current?.send(JSON.stringify({ type: 'joinDirect', targetUsername: targetUser.username }));
+
+    // Optimistically update UI
+    setActiveFriend(targetUser);
+    setChatTab('friends');
     setShowFriendsModal(false);
   };
 
@@ -392,9 +420,24 @@ function App() {
 
   const sendMessage = (e) => {
     e.preventDefault();
-    if (!inputText.trim() || !roomId) return;
-    ws.current.send(JSON.stringify({ type: 'message', roomId, text: inputText }));
-    setMessages(prev => [...prev, { from: 'me', text: inputText }]);
+    if (!inputText.trim()) return;
+
+    if (chatTab === 'anon') {
+      if (!roomId) return;
+      ws.current.send(JSON.stringify({ type: 'message', roomId, text: inputText }));
+      setMessages(prev => [...prev, { from: 'me', text: inputText }]);
+    } else if (chatTab === 'friends' && activeFriend) {
+      ws.current.send(JSON.stringify({
+        type: 'direct_message',
+        targetUserId: activeFriend.userId,
+        text: inputText,
+        conversationId: activeFriend.conversationId
+      }));
+      setFriendChats(prev => ({
+        ...prev,
+        [activeFriend.userId]: [...(prev[activeFriend.userId] || []), { from: 'me', text: inputText, timestamp: Date.now() }]
+      }));
+    }
     setInputText('');
   };
 
@@ -456,53 +499,100 @@ function App() {
 
         {/* Chat Area */}
         <div className="chat-area">
-          {/* Status Messages */}
-          {status === 'idle' && (
-            <div className="info-message">
-              Merhaba <strong>{user.display_name || user.username}</strong>!<br />
-              Sohbet aramaya başla.
-            </div>
-          )}
-          {status === 'queued' && <div className="info-message pulsing">Kullanıcı aranıyor...</div>}
-          {status === 'matched' && messages.length === 0 && (
-            <div className="info-message">
-              <img src={getAvatarUrl(peerId || peerRealUsername || peerUsername)} alt="Peer" style={{ width: 96, height: 96, borderRadius: '50%', marginBottom: 15, background: '#1e293b', border: '4px solid #3B82F6' }} />
-              <div style={{ fontSize: '1.2rem', marginBottom: 5 }}><strong>{peerUsername}</strong> ile eşleştin!</div>
-              <div style={{ opacity: 0.7 }}>Selam ver 👋</div>
-              {peerRealUsername && (
-                <button
-                  className="btn-add-friend"
-                  onClick={handleAddFriend}
-                >
-                  ➕ Arkadaş Ekle
-                </button>
-              )}
-            </div>
-          )}
-          {status === 'ended' && <div className="info-message">Sohbet sonlandı.</div>}
-          {status === 'disconnected' && <div className="info-message error-text">Bağlantı koptu.</div>}
+          {/* Tabs for switching between Anon and Friend chats */}
+          <div className="chat-tabs">
+            <button
+              className={`tab-btn ${chatTab === 'anon' ? 'active' : ''}`}
+              onClick={() => setChatTab('anon')}
+            >
+              🕵️ Anonim {status === 'matched' && '•'}
+            </button>
+            <button
+              className={`tab-btn ${chatTab === 'friends' ? 'active' : ''}`}
+              onClick={() => {
+                setChatTab('friends');
+                if (activeFriend) setUnreadFriends(prev => {
+                  const n = new Set(prev);
+                  n.delete(activeFriend.userId);
+                  return n;
+                });
+              }}
+            >
+              👥 Arkadaşlar {unreadFriends.size > 0 && <span className="badge-small">{unreadFriends.size}</span>}
+            </button>
+          </div>
 
-          {/* Messages */}
-          {messages.map((m, i) => (
-            <div key={i} className={`message-bubble ${m.from} ${m.msgType === 'image_sent_ack' ? 'success-bar' : ''}`}>
-              {m.msgType === 'image' ? (
-                <div style={{ textAlign: 'center', minWidth: 150 }}>
-                  <div style={{ marginBottom: 5, fontSize: '0.85rem', opacity: 0.8 }}>🔒 Tek Seferlik Fotoğraf</div>
-                  <button
-                    className="btn-primary"
-                    style={{ width: '100%', fontSize: '0.9rem', padding: '8px', background: m.opened ? '#475569' : 'var(--primary)' }}
-                    onClick={() => requestImage(m.mediaId)}
-                    disabled={m.opened}
-                  >
-                    {m.opened ? 'Açıldı (Silindi)' : '📸 Görüntüle'}
-                  </button>
+          {chatTab === 'anon' ? (
+            <>
+              {/* Status Messages */}
+              {status === 'idle' && (
+                <div className="info-message">
+                  Merhaba <strong>{user.display_name || user.username}</strong>!<br />
+                  Sohbet aramaya başla.
                 </div>
-              ) : (m.text)}
-            </div>
-          ))}
-          {isPeerTyping && (
-            <div className="message-bubble peer typing-indicator">
-              <span className="dot">.</span><span className="dot">.</span><span className="dot">.</span>
+              )}
+              {status === 'queued' && <div className="info-message pulsing">Kullanıcı aranıyor...</div>}
+              {status === 'matched' && messages.length === 0 && (
+                <div className="info-message">
+                  <img src={getAvatarUrl(peerId || peerRealUsername || peerUsername)} alt="Peer" style={{ width: 96, height: 96, borderRadius: '50%', marginBottom: 15, background: '#1e293b', border: '4px solid #3B82F6' }} />
+                  <div style={{ fontSize: '1.2rem', marginBottom: 5 }}><strong>{peerUsername}</strong> ile eşleştin!</div>
+                  <div style={{ opacity: 0.7 }}>Selam ver 👋</div>
+                  {peerRealUsername && (
+                    <button
+                      className="btn-add-friend"
+                      onClick={handleAddFriend}
+                    >
+                      ➕ Arkadaş Ekle
+                    </button>
+                  )}
+                </div>
+              )}
+              {status === 'ended' && <div className="info-message">Sohbet sonlandı.</div>}
+              {status === 'disconnected' && <div className="info-message error-text">Bağlantı koptu.</div>}
+
+              {/* Messages */}
+              {messages.map((m, i) => (
+                <div key={i} className={`message-bubble ${m.from} ${m.msgType === 'image_sent_ack' ? 'success-bar' : ''}`}>
+                  {m.msgType === 'image' ? (
+                    <div style={{ textAlign: 'center', minWidth: 150 }}>
+                      <div style={{ marginBottom: 5, fontSize: '0.85rem', opacity: 0.8 }}>🔒 Tek Seferlik Fotoğraf</div>
+                      <button
+                        className="btn-primary"
+                        style={{ width: '100%', fontSize: '0.9rem', padding: '8px', background: m.opened ? '#475569' : 'var(--primary)' }}
+                        onClick={() => requestImage(m.mediaId)}
+                        disabled={m.opened}
+                      >
+                        {m.opened ? 'Açıldı (Silindi)' : '📸 Görüntüle'}
+                      </button>
+                    </div>
+                  ) : (m.text)}
+                </div>
+              ))}
+              {isPeerTyping && (
+                <div className="message-bubble peer typing-indicator">
+                  <span className="dot">.</span><span className="dot">.</span><span className="dot">.</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="friend-chat-view">
+              {!activeFriend ? (
+                <div className="info-message">Sohbet etmek için arkadaş listesinden birini seçin.</div>
+              ) : (
+                <>
+                  <div className="active-friend-header">
+                    <span><strong>{activeFriend.nickname}</strong> ile sohbet</span>
+                    <button className="btn-ghost" onClick={() => setActiveFriend(null)}>✕</button>
+                  </div>
+                  <div className="friend-messages-container">
+                    {(friendChats[activeFriend.userId] || []).map((m, i) => (
+                      <div key={i} className={`message-bubble ${m.from}`}>
+                        {m.text}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -510,51 +600,60 @@ function App() {
 
         {/* Controls */}
         <div className="controls">
-          {status === 'matched' ? (
-            <>
-              <form className="input-group" onSubmit={sendMessage}>
-                {iceBreakerPreview && (
-                  <div className="ice-breaker-preview">
-                    <div className="preview-text">{iceBreakerPreview}</div>
-                    <div className="preview-actions">
-                      <button type="button" onClick={() => handleIceBreaker('shuffle')} title="Değiştir">🎲</button>
-                      <button type="button" onClick={() => handleIceBreaker('send')} title="Gönder">➤</button>
-                      <button type="button" className="btn-close" onClick={() => handleIceBreaker('close')} title="Kapat">✕</button>
+          {chatTab === 'anon' ? (
+            status === 'matched' ? (
+              <>
+                <form className="input-group" onSubmit={sendMessage}>
+                  {iceBreakerPreview && (
+                    <div className="ice-breaker-preview">
+                      <div className="preview-text">{iceBreakerPreview}</div>
+                      <div className="preview-actions">
+                        <button type="button" onClick={() => handleIceBreaker('shuffle')} title="Değiştir">🎲</button>
+                        <button type="button" onClick={() => handleIceBreaker('send')} title="Gönder">➤</button>
+                        <button type="button" className="btn-close" onClick={() => handleIceBreaker('close')} title="Kapat">✕</button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    onChange={handleFileSelect}
+                  />
+                  <button type="button" className="btn-ghost" title="Fotoğraf" onClick={() => fileInputRef.current?.click()}>📷</button>
+                  <button type="button" className="btn-ghost" title="Buz Kırıcı / Eğlence" onClick={() => handleIceBreaker('shuffle')}>🎲</button>
+                  <input value={inputText} onChange={handleInputChange} placeholder="Mesaj..." autoFocus />
+                  <button type="submit" className="send-btn">➤</button>
+                </form>
+                <div className="secondary-controls">
+                  <button type="button" className="btn-ghost" title="Raporla" style={{ flex: 0, color: '#EF4444' }} onClick={() => setShowReportModal(true)}>⚠️</button>
+                  {peerRealUsername && (
+                    <button className="btn-add-friend" style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem' }} onClick={handleAddFriend} title="Arkadaş Ekle">➕</button>
+                  )}
+                  <button className="btn-secondary" onClick={handleNext}>Sonraki</button>
+                  <button className="btn-danger" onClick={handleLeave}>Ayrıl</button>
+                </div>
+              </>
+            ) : (
+              <div className="action-buttons">
+                {(status === 'idle' || status === 'ended') && (
+                  <button className="btn-primary start-btn" onClick={handleStart}>
+                    {status === 'ended' ? 'Yeni Kişi Bul' : 'Eşleşmeye Başla'}
+                  </button>
                 )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={fileInputRef}
-                  style={{ display: 'none' }}
-                  onChange={handleFileSelect}
-                />
-                <button type="button" className="btn-ghost" title="Fotoğraf" onClick={() => fileInputRef.current?.click()}>📷</button>
-                <button type="button" className="btn-ghost" title="Buz Kırıcı / Eğlence" onClick={() => handleIceBreaker('shuffle')}>🎲</button>
-                <input value={inputText} onChange={handleInputChange} placeholder="Mesaj..." autoFocus />
+                {status === 'queued' && (
+                  <button className="btn-danger" onClick={handleLeave}>İptal</button>
+                )}
+              </div>
+            )
+          ) : (
+            activeFriend && (
+              <form className="input-group" onSubmit={sendMessage}>
+                <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Mesaj..." autoFocus />
                 <button type="submit" className="send-btn">➤</button>
               </form>
-              <div className="secondary-controls">
-                <button type="button" className="btn-ghost" title="Raporla" style={{ flex: 0, color: '#EF4444' }} onClick={() => setShowReportModal(true)}>⚠️</button>
-                {peerRealUsername && (
-                  <button className="btn-add-friend" style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem' }} onClick={handleAddFriend} title="Arkadaş Ekle">➕</button>
-                )}
-                <button className="btn-secondary" onClick={handleNext}>Sonraki</button>
-                <button className="btn-danger" onClick={handleLeave}>Ayrıl</button>
-              </div>
-            </>
-          ) : (
-            <div className="action-buttons">
-              {(status === 'idle' || status === 'ended') && (
-                <button className="btn-primary start-btn" onClick={handleStart}>
-                  {status === 'ended' ? 'Yeni Kişi Bul' : 'Eşleşmeye Başla'}
-                </button>
-              )}
-              {status === 'queued' && (
-                <button className="btn-danger" onClick={handleLeave}>İptal</button>
-              )}
-            </div>
+            )
           )}
         </div>
       </div>

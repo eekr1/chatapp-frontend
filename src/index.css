@@ -1,24 +1,27 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* Modern Professional Palette */
-  --bg-color: #0F172A;
-  --card-bg: #1E293B;
-  --primary: #3B82F6;
-  /* Blue 500 */
-  --primary-hover: #2563EB;
-  --accent: #8B5CF6;
-  /* Violet 500 */
-  --text-main: #F8FAFC;
-  --text-dim: #94A3B8;
-  --border-color: #334155;
+  /* Premium Dark Tech Palette */
+  --bg-color: #020617;
+  --card-bg: rgba(30, 41, 59, 0.7);
+  --primary: #3b82f6;
+  --primary-glow: rgba(59, 130, 246, 0.5);
+  --secondary: #8b5cf6;
+  --accent: #f43f5e;
+  --text-main: #f8fafc;
+  --text-dim: #94a3b8;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --glass-bg: rgba(15, 23, 42, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.08);
 
-  --bubble-me: #3B82F6;
-  --bubble-peer: #334155;
+  --bubble-me: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  --bubble-peer: rgba(51, 65, 85, 0.8);
 
-  --success: #10B981;
-  --danger: #EF4444;
-  --warning: #F59E0B;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+
+  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
 }
 
 * {
@@ -29,13 +32,27 @@
 }
 
 body {
-  background-color: var(--bg-color);
+  background: radial-gradient(circle at 50% 50%, #1e293b 0%, #020617 100%);
   color: var(--text-main);
   height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
   overflow: hidden;
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: absolute;
+  top: -10%;
+  left: -10%;
+  width: 120%;
+  height: 120%;
+  background: radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(139, 92, 246, 0.05) 0%, transparent 40%);
+  pointer-events: none;
+  z-index: -1;
 }
 
 /* LOGIN SCREEN */
@@ -50,13 +67,29 @@ body {
 
 .login-card {
   background: var(--card-bg);
+  backdrop-filter: blur(20px);
   padding: 3rem;
-  border-radius: 24px;
-  border: 1px solid var(--border-color);
+  border-radius: 32px;
+  border: 1px solid var(--glass-border);
   text-align: center;
   width: 90%;
-  max-width: 400px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+  max-width: 420px;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  overflow: hidden;
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 .login-card h1 {
@@ -108,25 +141,24 @@ body {
 .login-card button {
   width: 100%;
   padding: 16px;
-  background: var(--primary);
+  background: var(--bubble-me);
   color: white;
   border: none;
-  border-radius: 12px;
+  border-radius: 16px;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px var(--primary-glow);
 }
 
 .login-card button:hover {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 20px var(--primary-glow);
 }
 
-.login-card button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
+.login-card button:active {
+  transform: translateY(0) scale(0.98);
 }
 
 /* APP CONTAINER */
@@ -152,10 +184,11 @@ body {
 
 @media (min-width: 500px) {
   .main-card {
-    height: 90vh;
-    border-radius: 24px;
-    border: 1px solid var(--border-color);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    height: 85vh;
+    border-radius: 32px;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 40px 60px -20px rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(25px);
   }
 }
 
@@ -250,13 +283,27 @@ body {
 
 .message-bubble {
   max-width: 80%;
-  padding: 12px 18px;
-  border-radius: 20px;
+  padding: 14px 20px;
+  border-radius: 24px;
   font-size: 0.95rem;
-  line-height: 1.5;
+  line-height: 1.6;
   word-wrap: break-word;
   position: relative;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease;
+  animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes popIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .message-bubble.me {
@@ -264,6 +311,7 @@ body {
   background: var(--bubble-me);
   color: white;
   border-bottom-right-radius: 4px;
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.2);
 }
 
 .message-bubble.peer {
@@ -271,6 +319,8 @@ body {
   background: var(--bubble-peer);
   color: var(--text-main);
   border-bottom-left-radius: 4px;
+  backdrop-filter: blur(5px);
+  border: 1px solid var(--glass-border);
 }
 
 .controls {
