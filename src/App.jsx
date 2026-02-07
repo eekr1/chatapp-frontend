@@ -123,7 +123,7 @@ function App() {
 
     const playSound = () => {
       try {
-        const audio = new Audio('/sounds/pop.wav');
+        const audio = new Audio('/sounds/pop.ogg');
         audio.volume = 1.0; // Max volume
         const promise = audio.play();
         if (promise !== undefined) {
