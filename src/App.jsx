@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './index.css'; // New theme
-import { POP_SOUND_REAL as POP_SOUND } from './utils/sounds'; // Sound
 import { auth, profile, friends } from './api';
 import Auth from './components/Auth';
 
@@ -124,7 +123,7 @@ function App() {
 
     const playSound = () => {
       try {
-        const audio = new Audio(POP_SOUND);
+        const audio = new Audio('/sounds/pop.wav');
         audio.volume = 1.0; // Max volume
         const promise = audio.play();
         if (promise !== undefined) {
