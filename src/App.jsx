@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './index.css'; // New theme
-import { POP_SOUND } from './utils/sounds'; // Sound
+import { POP_SOUND_REAL as POP_SOUND } from './utils/sounds'; // Sound
 import { auth, profile, friends } from './api';
 import Auth from './components/Auth';
 
