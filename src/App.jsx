@@ -88,6 +88,14 @@ function App() {
       const res = await friends.list();
       setFriendList(res.data.friends || []);
       setFriendRequests(res.data.incoming || []);
+
+      // Initialize Unread Counts from Backend
+      const initialUnread = {};
+      (res.data.friends || []).forEach(f => {
+        if (f.unread_count > 0) initialUnread[f.user_id] = f.unread_count;
+      });
+      setUnreadCounts(initialUnread);
+
     } catch (e) { console.error('Friends load error:', e); }
   };
 
@@ -117,9 +125,13 @@ function App() {
     const playSound = () => {
       try {
         const audio = new Audio(POP_SOUND);
-        audio.volume = 0.5;
-        audio.play().catch(e => console.log('Audio blocked:', e));
-      } catch (e) { }
+        audio.volume = 1.0; // Max volume
+        const promise = audio.play();
+        if (promise !== undefined) {
+          promise.then(() => console.log('Sound played'))
+            .catch(e => console.warn('Audio blocked (interaction needed):', e));
+        }
+      } catch (e) { console.error('Audio error:', e); }
     };
 
     socket.onmessage = (event) => {
@@ -299,7 +311,11 @@ function App() {
 
   const handleLeaveChat = () => {
     if (chatMode === 'anon') {
-      ws.current?.send(JSON.stringify({ type: 'leave' }));
+      if (status === 'queued') {
+        ws.current?.send(JSON.stringify({ type: 'leaveQueue' })); // Fix: Send explicit leaveQueue
+      } else {
+        ws.current?.send(JSON.stringify({ type: 'leave' }));
+      }
     }
     setScreen('home');
     setMessages([]);
@@ -409,7 +425,7 @@ function App() {
     return (
       <HomeScreen
         onlineCount={onlineCount}
-        unreadCount={totalUnread}
+        unreadCount={totalUnread + (friendRequests.length || 0)} // Add friend requests to badge
         onSelectMode={(mode) => {
           if (mode === 'anon') handleStartAnon();
           else if (mode === 'friends') {
