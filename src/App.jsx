@@ -235,10 +235,13 @@ function App() {
   };
 
   const handleStartFriendChat = async (friend) => {
+    console.log('Selected friend:', friend);
     setActiveFriend(friend);
+    setRoomId(null); // Clear anon room
     setChatMode('friends');
     setPeerName(friend.display_name || friend.username);
-    setMessages([]);
+    setMessages([]); // Clear previous messages
+    setScreen('chat');
 
     // Clear unread
     setUnreadCounts(prev => {
