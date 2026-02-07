@@ -41,6 +41,7 @@ export const friends = {
     list: () => api.get('/friends/list'),
     accept: (request_user_id) => api.post('/friends/accept', { request_user_id }),
     reject: (target_user_id) => api.post('/friends/reject', { target_user_id }),
+    delete: (friendId) => api.delete(`/friends/${friendId}`),
     getHistory: (friendId) => api.get(`/friends/history/${friendId}`)
 };
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './index.css'; // New theme
+import { POP_SOUND } from './utils/sounds'; // Sound
 import { auth, profile, friends } from './api';
 import Auth from './components/Auth';
 
@@ -39,6 +40,8 @@ function App() {
   // Chat Data
   const [messages, setMessages] = useState([]); // Array of message objects
   const [peerName, setPeerName] = useState(null);
+  const [peerUsername, setPeerUsername] = useState(null); // New
+  const [peerId, setPeerId] = useState(null); // New
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [roomId, setRoomId] = useState(null);
   const [chatMode, setChatMode] = useState('anon'); // 'anon' or 'friends'
@@ -60,6 +63,12 @@ function App() {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  // Title Notification
+  useEffect(() => {
+    const total = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
+    document.title = total > 0 ? `(${total}) TalkX` : 'TalkX';
+  }, [unreadCounts]);
 
   const checkAuth = async () => {
     const token = localStorage.getItem('session_token');
@@ -105,13 +114,6 @@ function App() {
       }));
     };
 
-    // Notification Sound (Simple Beep - Tested)
-    const POP_SOUND = 'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU'; // Extremely short placeholder or use a real short beep
-    // Let's use a real one:
-    // data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU... is often too short.
-    // I will use a reliable, short 'pop' sound found in many examples.
-    const POP_SOUND_REAL = 'data:audio/mpeg;base64,SUQzBAAAAAABAFRYWFgAAAASAAADbWFqb3JfYnJhbmQAZGFzaABUWFhYAAAAEQAAA21pbm9yX3ZlcnNpb24AMABUWFhYAAAAHAAAA2NvbXBhdGlibGVfYnJhbmRzAGlzbzZtcDQxAFRTU0UAAAAPAAADTGF2ZjU5LjI3LjEwMAAAAAAAAAAAAAAA//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgAAAA0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//uQZAAABHp5UA5oAAIAAA0goAABGZ2VGDmQAAgAADSAAAAEQAAAAAAAFAAAAAAAA//uQZAAAAAAAIAAA0gAAABAAAAAAAABAAAAAAAIAAA0gAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//uQZAsABH55Vw0wAAIAAA0goAABF1nVwzkAAIAAA0goAABAAABUAAAAMAAAABAAAAAAAABAAAABAAAAA//uQZAUABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZA0ABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZA8ABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZBEABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZBUABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZBoABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZB8ABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZCwABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZDsABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZEkABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZF4ABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZGQABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZHIAAF5nWM0wAAIAAA0goAABMz5X05kAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZHgABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZIPABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZJ4ABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZKoABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZLgABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZMQABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZNQABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZOIABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZP4ABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA//uQZQwABF5nWM0wAAIAAA0goAABF5nWM0wAAIAAA0goAABAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAA';
-
     const playSound = () => {
       try {
         const audio = new Audio(POP_SOUND);
@@ -139,6 +141,8 @@ function App() {
             setStatus('matched');
             setRoomId(data.roomId);
             setPeerName(data.peerNickname || 'Anonim');
+            setPeerUsername(data.peerUsername);
+            setPeerId(data.peerId);
             setMessages([]);
             setScreen('chat');
             setChatMode('anon');
@@ -266,6 +270,24 @@ function App() {
   const handleRejectRequest = async (id) => {
     await friends.reject(id);
     loadFriends();
+  };
+
+  const handleDeleteFriend = async (friendId) => {
+    if (!window.confirm('Bu arkadaşı silmek ve engellemek istediğine emin misin?')) return;
+    try {
+      await friends.delete(friendId);
+      loadFriends(); // Refresh list
+    } catch (e) { console.error(e); alert('Silinemedi.'); }
+  };
+
+  const handleAddFriend = async () => {
+    if (!peerUsername) return alert('Kullanıcı adı bilgisi yok.');
+    try {
+      await friends.request(peerUsername);
+      alert('Arkadaşlık isteği gönderildi!');
+    } catch (e) {
+      alert(e.response?.data?.error || 'İstek gönderilemedi.');
+    }
   };
 
   const handleLeaveChat = () => {
@@ -403,6 +425,7 @@ function App() {
         onChat={handleStartFriendChat}
         onAccept={handleAcceptRequest}
         onReject={handleRejectRequest}
+        onDelete={handleDeleteFriend} // New
       />
     );
   }
@@ -428,6 +451,8 @@ function App() {
         onLeave={handleLeaveChat}
         onNewMatch={handleStartAnon}
         onReport={handleReport}
+        onAddFriend={handleAddFriend} // New
+        peerId={peerId} // New
         isTyping={isPeerTyping}
         onTyping={handleTyping}
         isFriendMode={chatMode === 'friends'}

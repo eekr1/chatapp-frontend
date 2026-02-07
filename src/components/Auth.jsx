@@ -34,18 +34,20 @@ export default function Auth({ onLogin }) {
     };
 
     return (
-        <div className="login-container">
-            <div className="login-card">
+        <div className="login-container center-flex" style={{ minHeight: '100vh' }}>
+            <div className="glass-card" style={{ padding: 40, width: '100%', maxWidth: 400, textAlign: 'center' }}>
                 <h1>TalkX</h1>
                 <p className="subtitle">{isLogin ? 'Tekrar Hoşgeldin!' : 'Yeni Hesap Oluştur'}</p>
 
-                <form onSubmit={handleSubmit}>
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 20 }}>
                     <input
+                        className="input-glass"
                         placeholder="Kullanıcı Adı"
                         value={username} onChange={e => setUsername(e.target.value)}
                         autoFocus
                     />
                     <input
+                        className="input-glass"
                         type="password"
                         placeholder="Şifre"
                         value={password} onChange={e => setPassword(e.target.value)}
@@ -60,14 +62,14 @@ export default function Auth({ onLogin }) {
                         </div>
                     )}
 
-                    <button type="submit" disabled={loading}>
+                    <button type="submit" disabled={loading} className="btn-solid-purple" style={{ marginTop: 10, width: '100%' }}>
                         {loading ? 'İşleniyor...' : (isLogin ? 'Giriş Yap' : 'Kayıt Ol')}
                     </button>
 
                     <p style={{ marginTop: '15px', fontSize: '0.9em', color: '#666' }}>
                         {isLogin ? 'Hesabın yok mu? ' : 'Zaten hesabın var mı? '}
                         <span
-                            style={{ color: '#3498db', cursor: 'pointer', fontWeight: 'bold' }}
+                            style={{ color: 'var(--primary)', cursor: 'pointer', fontWeight: 'bold' }}
                             onClick={() => { setIsLogin(!isLogin); setError(''); }}
                         >
                             {isLogin ? 'Kayıt Ol' : 'Giriş Yap'}

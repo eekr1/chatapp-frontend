@@ -29,7 +29,9 @@ const ChatScreen = ({
     onSendImage, // New
     onViewImage, // New
     onCloseImage, // New
-    viewingImage // New
+    viewingImage, // New
+    onAddFriend, // New
+    peerId // New
 }) => {
     const [inputValue, setInputValue] = useState("");
     const [randomName, setRandomName] = useState("");
@@ -65,9 +67,10 @@ const ChatScreen = ({
 
             {/* Header */}
             <GlassCard style={{
-                position: 'absolute', top: 20, left: 20, right: 20,
-                padding: '15px 20px', zIndex: 50, borderRadius: 16,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                position: 'sticky', top: 20, margin: '20px 20px 0 20px',
+                padding: '15px 20px', zIndex: 100, borderRadius: 16,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                backgroundColor: 'rgba(23, 23, 35, 0.85)', backdropFilter: 'blur(20px)'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     {/* Avatar */}
@@ -87,6 +90,13 @@ const ChatScreen = ({
                 </div>
 
                 <div style={{ display: 'flex', gap: 10 }}>
+                    {!isFriendMode && onAddFriend && (
+                        <button onClick={onAddFriend} title="Arkadaş Ekle" style={{
+                            background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem'
+                        }}>
+                            ➕
+                        </button>
+                    )}
                     <button onClick={onReport} style={{
                         background: 'transparent', color: 'var(--danger)', border: 'none',
                         cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '1.5rem'
@@ -113,13 +123,17 @@ const ChatScreen = ({
                                 {m.mediaExpired ? (
                                     <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>Fotoğraf Açıldı</span>
                                 ) : (
-                                    <button
-                                        className="btn-neon-sm"
-                                        style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-                                        onClick={() => onViewImage && onViewImage(m.mediaId)}
-                                    >
-                                        Fotoğrafı Görüntüle
-                                    </button>
+                                    m.from === 'me' ? (
+                                        <span style={{ fontStyle: 'italic', fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)' }}>Fotoğraf gönderildi</span>
+                                    ) : (
+                                        <button
+                                            className="btn-neon-sm"
+                                            style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                                            onClick={() => onViewImage && onViewImage(m.mediaId)}
+                                        >
+                                            Fotoğrafı Görüntüle
+                                        </button>
+                                    )
                                 )}
                             </div>
                         ) : (
