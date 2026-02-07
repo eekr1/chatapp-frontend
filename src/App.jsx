@@ -245,6 +245,7 @@ function App() {
     setPeerName(friend.display_name || friend.username);
     setMessages([]); // Clear previous messages
     setScreen('chat');
+    setStatus('matched'); // Ensure status is active so input is shown
 
     // Clear unread
     setUnreadCounts(prev => {
