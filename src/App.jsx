@@ -204,6 +204,9 @@ function App() {
             // Mark as expired in UI
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
             break;
+          case 'friend_refresh':
+            loadFriends();
+            break;
         }
       } catch (e) { console.error(e); }
     };
