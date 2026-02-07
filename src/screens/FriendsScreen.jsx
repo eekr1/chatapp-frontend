@@ -74,16 +74,16 @@ const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject, 
                         </div>
                     ) : (
                         requests.map(r => (
-                            <GlassCard key={r.id} className="animate-slide-up" style={{ padding: 15, display: 'flex', alignRequests: 'center', justifyContent: 'space-between' }}>
+                            <GlassCard key={r.user_id} className="animate-slide-up" style={{ padding: 15, display: 'flex', alignRequests: 'center', justifyContent: 'space-between' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                     <span style={{ fontSize: '1.2rem' }}>📩</span>
                                     <div>
-                                        <h4 style={{ color: 'white' }}>@{r.sender_username}</h4>
+                                        <h4 style={{ color: 'white' }}>@{r.username}</h4>
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
-                                    <button onClick={() => onAccept(r.id)} style={{ background: 'var(--success)', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'black' }}>✓</button>
-                                    <button onClick={() => onReject(r.id)} style={{ background: 'var(--danger)', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'white' }}>✕</button>
+                                    <button onClick={() => onAccept(r.user_id)} style={{ background: 'var(--success)', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'black' }}>✓</button>
+                                    <button onClick={() => onReject(r.user_id)} style={{ background: 'var(--danger)', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'white' }}>✕</button>
                                 </div>
                             </GlassCard>
                         ))
