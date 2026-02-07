@@ -66,11 +66,13 @@ const ChatScreen = ({
         <div className="screen-container" style={{ padding: 0 }}>
 
             {/* Header */}
-            <GlassCard style={{
-                position: 'sticky', top: 20, margin: '20px 20px 0 20px',
-                padding: '15px 20px', zIndex: 100, borderRadius: 16,
+            <div style={{
+                position: 'sticky', top: 0, width: '100%', zIndex: 100,
+                padding: '10px 15px',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                backgroundColor: 'rgba(23, 23, 35, 0.85)', backdropFilter: 'blur(20px)'
+                backgroundColor: 'rgba(23, 23, 35, 0.95)', backdropFilter: 'blur(10px)',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     {/* Avatar */}
@@ -111,7 +113,7 @@ const ChatScreen = ({
                         ✕
                     </button>
                 </div>
-            </GlassCard>
+            </div>
 
             {/* Messages Area */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '100px 20px 100px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
