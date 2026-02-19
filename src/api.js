@@ -1,7 +1,9 @@
 import axios from 'axios';
-import { Capacitor } from '@capacitor/core';
 
-const isNative = Capacitor.isNativePlatform();
+const isNative = typeof window !== 'undefined' && (
+    (typeof window.Capacitor?.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
+    Boolean(window.Capacitor?.isNative)
+);
 // Prioritize ENV variable first (Production), then Native (Emulator), then default (Proxy/Local)
 const baseURL = import.meta.env.VITE_API_URL || (isNative ? 'http://10.0.2.2:3000' : '');
 

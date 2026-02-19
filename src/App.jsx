@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Capacitor } from '@capacitor/core';
 import './index.css'; // New theme
 import { auth, profile, friends } from './api';
 import Auth from './components/Auth';
@@ -23,6 +22,10 @@ const getDeviceId = () => {
 const DEVICE_ID = getDeviceId();
 
 const IS_DEV = import.meta.env.DEV;
+const IS_NATIVE = typeof window !== 'undefined' && (
+  (typeof window.Capacitor?.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
+  Boolean(window.Capacitor?.isNative)
+);
 
 function App() {
   // Navigation State: 'splash', 'home', 'matching', 'chat', 'friends'
@@ -120,9 +123,8 @@ function App() {
     const host = window.location.host;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const fallbackUrl = `${protocol}//${host}`;
-    const isNative = Capacitor.isNativePlatform();
     // Prioritize ENV variable first (Production), then Native (Emulator), then default (Proxy/Local)
-    const WS_URL = import.meta.env.VITE_WS_URL || (isNative ? 'ws://10.0.2.2:3000' : (host.includes('localhost') ? 'ws://localhost:3000' : fallbackUrl));
+    const WS_URL = import.meta.env.VITE_WS_URL || (IS_NATIVE ? 'ws://10.0.2.2:3000' : (host.includes('localhost') ? 'ws://localhost:3000' : fallbackUrl));
 
     const socket = new WebSocket(WS_URL);
     ws.current = socket;
