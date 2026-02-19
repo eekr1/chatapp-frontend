@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import './index.css'; // New theme
 import { auth, profile, friends } from './api';
 import Auth from './components/Auth';
@@ -20,6 +21,8 @@ const getDeviceId = () => {
   return id;
 };
 const DEVICE_ID = getDeviceId();
+
+const IS_DEV = import.meta.env.DEV;
 
 function App() {
   // Navigation State: 'splash', 'home', 'matching', 'chat', 'friends'
@@ -50,6 +53,17 @@ function App() {
   const typingTimeoutRef = useRef(null);
   const lastTypingSentRef = useRef(0);
 
+  const IMAGE_FETCH_TIMEOUT_MS = 12000;
+  const initialImageViewer = {
+    open: false,
+    status: 'idle', // 'idle' | 'loading' | 'ready' | 'error'
+    mediaId: null,
+    dataUrl: null,
+    error: null
+  };
+  const [imageViewer, setImageViewer] = useState(initialImageViewer);
+  const imageFetchTimeoutRef = useRef(null);
+
   // State Refs (for WS closure access)
   const activeFriendRef = useRef(activeFriend);
   const chatModeRef = useRef(chatMode);
@@ -58,31 +72,7 @@ function App() {
   useEffect(() => { activeFriendRef.current = activeFriend; }, [activeFriend]);
   useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
 
-  // --- Auth & Init ---
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  // Title Notification
-  useEffect(() => {
-    const total = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
-    document.title = total > 0 ? `(${total}) TalkX` : 'TalkX';
-  }, [unreadCounts]);
-
-  const checkAuth = async () => {
-    const token = localStorage.getItem('session_token');
-    if (token) {
-      try {
-        const res = await profile.getMe();
-        setUser(res.data.user);
-        loadFriends(); // Load friends on init
-      } catch (e) {
-        localStorage.removeItem('session_token');
-      }
-    }
-  };
-
-  const loadFriends = async () => {
+  async function loadFriends() {
     try {
       const res = await friends.list();
       setFriendList(res.data.friends || []);
@@ -96,7 +86,32 @@ function App() {
       setUnreadCounts(initialUnread);
 
     } catch (e) { console.error('Friends load error:', e); }
-  };
+  }
+
+  async function checkAuth() {
+    const token = localStorage.getItem('session_token');
+    if (token) {
+      try {
+        const res = await profile.getMe();
+        setUser(res.data.user);
+        loadFriends(); // Load friends on init
+      } catch {
+        localStorage.removeItem('session_token');
+      }
+    }
+  }
+
+  // --- Auth & Init ---
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    checkAuth();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Title Notification
+  useEffect(() => {
+    const total = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
+    document.title = total > 0 ? `(${total}) TalkX` : 'TalkX';
+  }, [unreadCounts]);
 
   // --- WebSocket Logic ---
   const connect = useCallback(() => {
@@ -105,13 +120,15 @@ function App() {
     const host = window.location.host;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const fallbackUrl = `${protocol}//${host}`;
-    const WS_URL = import.meta.env.VITE_WS_URL || (host.includes('localhost') ? 'ws://localhost:3000' : fallbackUrl);
+    const isNative = Capacitor.isNativePlatform();
+    // Prioritize ENV variable first (Production), then Native (Emulator), then default (Proxy/Local)
+    const WS_URL = import.meta.env.VITE_WS_URL || (isNative ? 'ws://10.0.2.2:3000' : (host.includes('localhost') ? 'ws://localhost:3000' : fallbackUrl));
 
     const socket = new WebSocket(WS_URL);
     ws.current = socket;
 
     socket.onopen = () => {
-      console.log('WS Connected (Cyberpunk v2)');
+      if (IS_DEV) console.log('WS Connected (Cyberpunk v2)');
       setStatus('idle');
       // Auth Handshake
       socket.send(JSON.stringify({
@@ -127,7 +144,7 @@ function App() {
         audio.volume = 1.0; // Max volume
         const promise = audio.play();
         if (promise !== undefined) {
-          promise.then(() => console.log('Sound played'))
+          promise.then(() => { if (IS_DEV) console.log('Sound played'); })
             .catch(e => console.warn('Audio blocked (interaction needed):', e));
         }
       } catch (e) { console.error('Audio error:', e); }
@@ -136,7 +153,7 @@ function App() {
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('[WS DEBUG]', data.type, data); // Debug all incoming
+        if (IS_DEV) console.log('[WS DEBUG]', data.type, data); // Debug all incoming
 
         switch (data.type) {
           case 'onlineCount': setOnlineCount(data.count); break;
@@ -145,7 +162,7 @@ function App() {
             setScreen('matching');
             break;
           case 'debug':
-            console.log('%c[SERVER DEBUG]', 'color: #ff00ff; font-weight: bold', data.msg, data);
+            if (IS_DEV) console.log('%c[SERVER DEBUG]', 'color: #ff00ff; font-weight: bold', data.msg, data);
             break;
           case 'matched':
             playSound();
@@ -164,7 +181,7 @@ function App() {
             setIsPeerTyping(false);
             playSound();
             break;
-          case 'direct_message':
+          case 'direct_message': {
             // Friend message
             const senderId = data.fromUserId;
             const currentActive = activeFriendRef.current;
@@ -186,6 +203,7 @@ function App() {
             }
             playSound();
             break;
+          }
           case 'image_sent':
             // Sender confirmation (Show 'View Photo' bubble on my side)
             setMessages(prev => [...prev, {
@@ -206,12 +224,30 @@ function App() {
             setStatus('ended');
             break;
           case 'image_data':
-            setCurrentImage(data.imageData);
+            if (imageFetchTimeoutRef.current) {
+              clearTimeout(imageFetchTimeoutRef.current);
+              imageFetchTimeoutRef.current = null;
+            }
+
+            setImageViewer(prev => {
+              if (!prev.open || prev.mediaId !== data.mediaId) return prev;
+              return { ...prev, status: 'ready', dataUrl: data.imageData, error: null };
+            });
+
             // Mark as expired immediately (View Once)
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
             break;
           case 'image_error':
-            alert(data.message);
+            if (imageFetchTimeoutRef.current) {
+              clearTimeout(imageFetchTimeoutRef.current);
+              imageFetchTimeoutRef.current = null;
+            }
+
+            setImageViewer(prev => {
+              if (!prev.open || prev.mediaId !== data.mediaId) return prev;
+              return { ...prev, status: 'error', error: data.message || 'Fotoğraf yüklenemedi.' };
+            });
+
             // Mark as expired in UI
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
             break;
@@ -231,25 +267,49 @@ function App() {
 
   useEffect(() => {
     if (user) connect();
-    // Do NOT close on unmount of effect unless user matches change, 
-    // to keep connection alive during nav
-    return () => {
-      // Only close if user logs out or we really mean to Kill it. 
-      // For now, let's keep it alive. 
-      // Actually, React Strict Mode might kill it. 
-      // Proper pattern: Check if user changed.
-    };
   }, [user, connect]);
 
 
   // --- Actions ---
+  const handleLogout = async () => {
+    try { await auth.logout(); } catch (e) { console.error('Logout error:', e); }
+
+    try { ws.current?.close(); } catch (e) { if (IS_DEV) console.warn('WS close failed:', e); }
+    ws.current = null;
+
+    // Reset all app state
+    setUser(null);
+    setScreen('splash');
+    setStatus('disconnected');
+    setOnlineCount(0);
+
+    setFriendList([]);
+    setFriendRequests([]);
+    setActiveFriend(null);
+    setUnreadCounts({});
+
+    setMessages([]);
+    setPeerName(null);
+    setPeerUsername(null);
+    setPeerId(null);
+    setIsPeerTyping(false);
+    setRoomId(null);
+    setChatMode('anon');
+
+    if (imageFetchTimeoutRef.current) {
+      clearTimeout(imageFetchTimeoutRef.current);
+      imageFetchTimeoutRef.current = null;
+    }
+    setImageViewer(initialImageViewer);
+  };
+
   const handleStartAnon = () => {
     ws.current?.send(JSON.stringify({ type: 'joinQueue' }));
     setScreen('matching');
   };
 
   const handleStartFriendChat = async (friend) => {
-    console.log('Selected friend:', friend);
+    if (IS_DEV) console.log('Selected friend:', friend);
     setActiveFriend(friend);
     setRoomId(null); // Clear anon room
     setChatMode('friends');
@@ -272,7 +332,8 @@ function App() {
         from: m.from, // Backend already calculates 'me' or 'peer'
         text: m.text,
         msgType: m.msgType,
-        mediaId: m.mediaId
+        mediaId: m.mediaId,
+        mediaExpired: m.mediaExpired
       }));
       setMessages(histMsgs);
     } catch (e) { console.error('History error', e); }
@@ -323,7 +384,7 @@ function App() {
   };
 
   const handleSendMessage = (text) => {
-    console.log('[App] handleSendMessage:', text, 'Mode:', chatMode);
+    if (IS_DEV) console.log('[App] handleSendMessage:', text, 'Mode:', chatMode);
 
     // Optimistic Update
     setMessages(prev => [...prev, { from: 'me', text }]);
@@ -331,7 +392,7 @@ function App() {
     if (chatMode === 'anon' && roomId) {
       ws.current?.send(JSON.stringify({ type: 'message', roomId, text }));
     } else if (chatMode === 'friends' && activeFriend) {
-      console.log('[App] Sending DM to:', activeFriend.user_id);
+      if (IS_DEV) console.log('[App] Sending DM to:', activeFriend.user_id);
       if (!activeFriend.user_id) console.error('[App] activeFriend has no user_id!', activeFriend);
 
       ws.current?.send(JSON.stringify({
@@ -340,7 +401,7 @@ function App() {
         text
       }));
     } else {
-      console.warn('[App] Message not sent. State invalid:', { chatMode, roomId, activeFriend });
+      if (IS_DEV) console.warn('[App] Message not sent. State invalid:', { chatMode, roomId, activeFriend });
     }
   };
 
@@ -381,13 +442,13 @@ function App() {
     }
   };
 
-  // Image State
-  const [currentImage, setCurrentImage] = useState(null);
-
-  // Sync to window for ChatScreen (Temporary Bridge)
-  useEffect(() => { window.viewingImage = currentImage; }, [currentImage]);
-
-  // ... Render Flow ...
+  const closeImageViewer = () => {
+    if (imageFetchTimeoutRef.current) {
+      clearTimeout(imageFetchTimeoutRef.current);
+      imageFetchTimeoutRef.current = null;
+    }
+    setImageViewer(initialImageViewer);
+  };
 
   // Image Handlers
   const handleSendImage = (base64) => {
@@ -403,7 +464,30 @@ function App() {
   };
 
   const handleViewImage = (mediaId) => {
+    if (!mediaId) return;
+
+    if (imageFetchTimeoutRef.current) {
+      clearTimeout(imageFetchTimeoutRef.current);
+      imageFetchTimeoutRef.current = null;
+    }
+
+    setImageViewer({
+      open: true,
+      status: 'loading',
+      mediaId,
+      dataUrl: null,
+      error: null
+    });
+
     ws.current?.send(JSON.stringify({ type: 'fetch_image', mediaId }));
+
+    imageFetchTimeoutRef.current = setTimeout(() => {
+      setImageViewer(prev => {
+        if (!prev.open || prev.mediaId !== mediaId || prev.status !== 'loading') return prev;
+        return { ...prev, status: 'error', error: 'Zaman aşımı. Tekrar deneyin.' };
+      });
+      imageFetchTimeoutRef.current = null;
+    }, IMAGE_FETCH_TIMEOUT_MS);
   };
 
   // Update socket.onmessage inside connect()
@@ -425,6 +509,7 @@ function App() {
       <HomeScreen
         onlineCount={onlineCount}
         unreadCount={totalUnread + (friendRequests.length || 0)} // Add friend requests to badge
+        onLogout={handleLogout}
         onSelectMode={(mode) => {
           if (mode === 'anon') handleStartAnon();
           else if (mode === 'friends') {
@@ -457,7 +542,7 @@ function App() {
     return (
       <MatchScreen
         onCancel={handleLeaveChat}
-        onMatchMock={() => { }}
+        onMatchMock={() => undefined}
       />
     );
   }
@@ -482,28 +567,12 @@ function App() {
         // Image Logic
         onSendImage={handleSendImage}
         onViewImage={handleViewImage}
-        onCloseImage={() => setCurrentImage(null)}
-        viewingImage={currentImage} // Pass as prop
+        onRetryViewImage={handleViewImage}
+        onCloseImage={closeImageViewer}
+        imageViewer={imageViewer}
       />
     );
   }
-
-  // Inject image into window for Modal (quick fix as ChatScreen manages modal via window/prop)
-  // Actually ChatScreen uses window.viewingImage? Let's fix that design.
-  // Better: ChatScreen receives the image data via prop.
-  // Since ChatScreen logic used `window.viewingImage` in my previous step, I should pass it via check.
-  // But wait, I put `window.viewingImage` inside ChatScreen render. 
-  // Ideally, App.jsx manages the state `currentImage` and passes it to ChatScreen.
-  // The ChatScreen logic I wrote earlier checks `window.viewingImage`. 
-  // I should update ChatScreen to use a prop or simpler: App.jsx handles the modal?
-  // No, let's just make ChatScreen use the prop.
-  // Correction: I wrote `window.viewingImage` in ChatScreen. That was a bad practice placeholder.
-  // I will rely on App.jsx setting `window.viewingImage` OR passed prop.
-  // Let's stick to state in App.jsx and passing it?
-  // Actually, let's keep it simple: App.jsx sets a state `viewingImage`. 
-  // And we pass it to ChatScreen as a prop `viewingImageUrl`.
-  // I need to update ChatScreen to use the prop instead of window. Noted.
-  // For now, let's implement the handlers.
 
   return <div>Unknown State</div>;
 }

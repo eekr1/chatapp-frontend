@@ -1,7 +1,12 @@
 import axios from 'axios';
+import { Capacitor } from '@capacitor/core';
+
+const isNative = Capacitor.isNativePlatform();
+// Prioritize ENV variable first (Production), then Native (Emulator), then default (Proxy/Local)
+const baseURL = import.meta.env.VITE_API_URL || (isNative ? 'http://10.0.2.2:3000' : '');
 
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || '', // Proxy usually handles /auth etc.
+    baseURL
 });
 
 // Auto-add token
@@ -17,7 +22,9 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
     response => response,
     error => {
-        console.error(`API Error [${error.config?.method?.toUpperCase()}] ${error.config?.url}:`, error.response?.status, error.message);
+        if (import.meta.env.DEV) {
+            console.error(`API Error [${error.config?.method?.toUpperCase()}] ${error.config?.url}:`, error.response?.status, error.message);
+        }
         return Promise.reject(error);
     }
 );
@@ -25,9 +32,22 @@ api.interceptors.response.use(
 export const auth = {
     register: (username, password) => api.post('/auth/register', { username, password }),
     login: (username, password, device_id) => api.post('/auth/login', { username, password, device_id }),
-    logout: () => {
-        localStorage.removeItem('session_token');
-        return api.post('/auth/logout');
+    logout: async () => {
+        const token = localStorage.getItem('session_token');
+        try {
+            // Best-effort: try to invalidate server session if token exists.
+            if (token) {
+                await api.post('/auth/logout', null, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+            } else {
+                await api.post('/auth/logout');
+            }
+        } catch {
+            // Ignore network/server errors; local logout should still succeed.
+        } finally {
+            localStorage.removeItem('session_token');
+        }
     }
 };
 

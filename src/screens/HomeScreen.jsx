@@ -19,7 +19,7 @@ const FriendsIcon = () => (
     </svg>
 );
 
-const HomeScreen = ({ onSelectMode, onlineCount, unreadCount = 0 }) => {
+const HomeScreen = ({ onSelectMode, onlineCount, unreadCount = 0, onLogout }) => {
     return (
         <div className="screen-container animate-fade-in" style={{ justifyContent: 'space-between' }}>
 
@@ -31,11 +31,23 @@ const HomeScreen = ({ onSelectMode, onlineCount, unreadCount = 0 }) => {
                 paddingTop: 10
             }}>
                 <h2 className="logo-text" style={{ fontSize: '1.5rem' }}>TALK X</h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 8, height: 8, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 5px var(--success)' }}></span>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontFamily: 'var(--font-display)' }}>
-                        {onlineCount} Online
-                    </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 8, height: 8, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 5px var(--success)' }}></span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontFamily: 'var(--font-display)' }}>
+                            {onlineCount} Online
+                        </span>
+                    </div>
+                    {onLogout && (
+                        <button
+                            onClick={onLogout}
+                            className="btn-neon"
+                            style={{ padding: '8px 12px', borderRadius: 10, fontSize: '0.75rem' }}
+                            title="Çıkış Yap"
+                        >
+                            Çıkış
+                        </button>
+                    )}
                 </div>
             </header>
 

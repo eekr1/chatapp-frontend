@@ -119,6 +119,23 @@ h4 {
   transform: scale(0.95);
 }
 
+.btn-neon-sm {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 5px rgba(0, 240, 255, 0.08);
+}
+
+.btn-neon-sm:active {
+  transform: scale(0.97);
+}
+
 .btn-solid-purple {
   background: linear-gradient(135deg, var(--accent-2), var(--accent));
   color: white;
