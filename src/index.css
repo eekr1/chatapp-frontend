@@ -26,6 +26,9 @@
   --font-logo: 'Orbitron', sans-serif;
   --font-main: 'Inter', sans-serif;
   --font-display: 'Poppins', sans-serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --keyboard-offset: 0px;
 }
 
 /* Reset & Base */
@@ -43,6 +46,7 @@ body {
   background-attachment: fixed;
   color: var(--text-main);
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -260,6 +264,7 @@ h4 {
 /* Layout Helpers */
 .screen-container {
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -315,4 +320,56 @@ h4 {
   40% {
     transform: scale(1);
   }
+}
+
+.admin-toast-stack {
+  position: fixed;
+  top: calc(var(--safe-top) + 12px);
+  left: 12px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  max-width: min(420px, calc(100vw - 24px));
+}
+
+.admin-toast {
+  pointer-events: auto;
+  position: relative;
+  padding: 12px 14px 12px 12px;
+  background: rgba(13, 20, 35, 0.94);
+  border: 1px solid rgba(0, 240, 255, 0.28);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.admin-toast-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-right: 16px;
+}
+
+.admin-toast-body {
+  font-size: 0.82rem;
+  color: var(--text-main);
+  margin-top: 4px;
+  word-break: break-word;
+}
+
+.admin-toast-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  line-height: 18px;
+  padding: 0;
 }

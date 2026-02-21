@@ -1,65 +1,66 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import './index.css'; // New theme
-import { auth, profile, friends } from './api';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import './index.css';
+import { auth, profile, friends, push as pushApi } from './api';
 import Auth from './components/Auth';
 
-// New Screens
 import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
 import MatchScreen from './screens/MatchScreen';
 import ChatScreen from './screens/ChatScreen';
 import FriendsScreen from './screens/FriendsScreen';
+import {
+  isNativePlatform,
+  setupViewportInsets,
+  configureNativeSystemUi,
+  initNativePush,
+  showLocalNotification
+} from './utils/nativeBridge';
 
-// Legacy Device ID
 const getDeviceId = () => {
   let id = localStorage.getItem('anon_device_id');
   if (!id) {
-    id = 'dev-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now().toString(36);
+    id = `dev-${Math.random().toString(36).slice(2, 11)}-${Date.now().toString(36)}`;
     localStorage.setItem('anon_device_id', id);
   }
   return id;
 };
-const DEVICE_ID = getDeviceId();
 
+const DEVICE_ID = getDeviceId();
 const IS_DEV = import.meta.env.DEV;
-const IS_NATIVE = typeof window !== 'undefined' && (
-  (typeof window.Capacitor?.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
-  Boolean(window.Capacitor?.isNative)
-);
+const IS_NATIVE = isNativePlatform();
 
 function App() {
-  // Navigation State: 'splash', 'home', 'matching', 'chat', 'friends'
   const [screen, setScreen] = useState('splash');
 
-  // App Data
   const [user, setUser] = useState(null);
   const [onlineCount, setOnlineCount] = useState(0);
-  const [status, setStatus] = useState('disconnected'); // idle, queued, matched, ended
+  const [status, setStatus] = useState('disconnected');
 
-  // Friend Data
   const [friendList, setFriendList] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
-  const [activeFriend, setActiveFriend] = useState(null); // The friend we are chatting with
-  const [unreadCounts, setUnreadCounts] = useState({}); // { userId: count }
+  const [activeFriend, setActiveFriend] = useState(null);
+  const [unreadCounts, setUnreadCounts] = useState({});
 
-  // Chat Data
-  const [messages, setMessages] = useState([]); // Array of message objects
+  const [messages, setMessages] = useState([]);
   const [peerName, setPeerName] = useState(null);
-  const [peerUsername, setPeerUsername] = useState(null); // New
-  const [peerId, setPeerId] = useState(null); // New
+  const [peerUsername, setPeerUsername] = useState(null);
+  const [peerId, setPeerId] = useState(null);
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [roomId, setRoomId] = useState(null);
-  const [chatMode, setChatMode] = useState('anon'); // 'anon' or 'friends'
+  const [chatMode, setChatMode] = useState('anon');
 
-  // Refs
+  const [notices, setNotices] = useState([]);
+
   const ws = useRef(null);
   const typingTimeoutRef = useRef(null);
   const lastTypingSentRef = useRef(0);
+  const toastTimersRef = useRef(new Map());
+  const pushTokenRef = useRef(null);
 
   const IMAGE_FETCH_TIMEOUT_MS = 12000;
   const initialImageViewer = {
     open: false,
-    status: 'idle', // 'idle' | 'loading' | 'ready' | 'error'
+    status: 'idle',
     mediaId: null,
     dataUrl: null,
     error: null
@@ -67,104 +68,231 @@ function App() {
   const [imageViewer, setImageViewer] = useState(initialImageViewer);
   const imageFetchTimeoutRef = useRef(null);
 
-  // State Refs (for WS closure access)
   const activeFriendRef = useRef(activeFriend);
   const chatModeRef = useRef(chatMode);
+  const screenRef = useRef(screen);
 
-  // Sync Refs
   useEffect(() => { activeFriendRef.current = activeFriend; }, [activeFriend]);
   useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
+  useEffect(() => { screenRef.current = screen; }, [screen]);
 
-  async function loadFriends() {
+  const showToast = useCallback((title, body, durationMs = 10000) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const safeDuration = Math.max(3000, Math.min(60000, Number(durationMs) || 10000));
+    setNotices(prev => [...prev, { id, title: title || 'TalkX', body: body || '' }]);
+
+    const timer = window.setTimeout(() => {
+      setNotices(prev => prev.filter(item => item.id !== id));
+      toastTimersRef.current.delete(id);
+    }, safeDuration);
+
+    toastTimersRef.current.set(id, timer);
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
+    setNotices(prev => prev.filter(item => item.id !== id));
+  }, []);
+
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
+
+  const loadFriends = useCallback(async () => {
     try {
       const res = await friends.list();
       setFriendList(res.data.friends || []);
       setFriendRequests(res.data.incoming || []);
 
-      // Initialize Unread Counts from Backend
       const initialUnread = {};
-      (res.data.friends || []).forEach(f => {
+      (res.data.friends || []).forEach((f) => {
         if (f.unread_count > 0) initialUnread[f.user_id] = f.unread_count;
       });
       setUnreadCounts(initialUnread);
-
-    } catch (e) { console.error('Friends load error:', e); }
-  }
-
-  async function checkAuth() {
-    const token = localStorage.getItem('session_token');
-    if (token) {
-      try {
-        const res = await profile.getMe();
-        setUser(res.data.user);
-        loadFriends(); // Load friends on init
-      } catch {
-        localStorage.removeItem('session_token');
-      }
+    } catch (e) {
+      console.error('Friends load error:', e);
     }
-  }
+  }, []);
 
-  // --- Auth & Init ---
+  const checkAuth = useCallback(async () => {
+    const token = localStorage.getItem('session_token');
+    if (!token) return;
+
+    try {
+      const res = await profile.getMe();
+      setUser(res.data.user);
+      loadFriends();
+    } catch {
+      localStorage.removeItem('session_token');
+    }
+  }, [loadFriends]);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     checkAuth();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [checkAuth]);
 
-  // Title Notification
   useEffect(() => {
     const total = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
     document.title = total > 0 ? `(${total}) TalkX` : 'TalkX';
   }, [unreadCounts]);
 
-  // --- WebSocket Logic ---
+  useEffect(() => {
+    const cleanupInsets = setupViewportInsets();
+    configureNativeSystemUi();
+    return cleanupInsets;
+  }, []);
+
+  const notifyIncoming = useCallback(async ({ title, body, data, durationMs = 10000, local = false }) => {
+    showToast(title, body, durationMs);
+    if (IS_NATIVE && local) {
+      await showLocalNotification({ title, body, data });
+    }
+  }, [showToast]);
+
+  const registerPushToken = useCallback(async (tokenValue) => {
+    if (!user || !tokenValue) return;
+    if (pushTokenRef.current === tokenValue) return;
+
+    pushTokenRef.current = tokenValue;
+    try {
+      await pushApi.register({
+        token: tokenValue,
+        platform: 'android',
+        deviceId: DEVICE_ID
+      });
+      if (IS_DEV) console.log('Push token registered');
+    } catch (e) {
+      console.warn('Push token register failed:', e?.response?.data || e.message);
+    }
+  }, [user]);
+
+  const handlePushPayload = useCallback(async (payload = {}, fromPushEvent = false) => {
+    const data = payload.data || {};
+    const title = payload.title || payload.notification?.title || data.title || 'TalkX';
+    const body = payload.body || payload.notification?.body || data.body || '';
+    const type = data.type || payload.type;
+
+    if (type === 'admin_notice') {
+      const durationMs = Number(data.durationMs || 10000);
+      showToast(title, body, durationMs);
+      if (fromPushEvent) {
+        await showLocalNotification({ title, body, data });
+      }
+      return;
+    }
+
+    if (type === 'direct_message') {
+      const senderId = data.fromUserId || payload.fromUserId;
+      const currentActive = activeFriendRef.current;
+      const isActiveConversation =
+        screenRef.current === 'chat' &&
+        chatModeRef.current === 'friends' &&
+        currentActive &&
+        currentActive.user_id === senderId;
+
+      if (!isActiveConversation) {
+        await notifyIncoming({
+          title,
+          body,
+          data,
+          durationMs: 10000,
+          local: true
+        });
+      }
+      return;
+    }
+
+    if (fromPushEvent) {
+      await showLocalNotification({ title, body, data });
+    }
+  }, [notifyIncoming, showToast]);
+
+  useEffect(() => {
+    if (!user) return;
+    let dispose = () => { };
+
+    (async () => {
+      dispose = await initNativePush({
+        onToken: registerPushToken,
+        onPushReceived: (notification) => {
+          handlePushPayload(notification, true);
+        },
+        onPushAction: (notification) => {
+          handlePushPayload(notification.notification || notification, false);
+        }
+      });
+    })();
+
+    return () => {
+      try {
+        dispose();
+      } catch (e) {
+        if (IS_DEV) console.warn('Push dispose failed:', e?.message || e);
+      }
+    };
+  }, [user, registerPushToken, handlePushPayload]);
+
   const connect = useCallback(() => {
     if (!user || ws.current?.readyState === WebSocket.OPEN) return;
 
     const host = window.location.host;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const fallbackUrl = `${protocol}//${host}`;
-    // Prioritize ENV variable first (Production), then Native (Emulator), then default (Proxy/Local)
     const WS_URL = import.meta.env.VITE_WS_URL || (IS_NATIVE ? 'ws://10.0.2.2:3000' : (host.includes('localhost') ? 'ws://localhost:3000' : fallbackUrl));
 
     const socket = new WebSocket(WS_URL);
     ws.current = socket;
 
     socket.onopen = () => {
-      if (IS_DEV) console.log('WS Connected (Cyberpunk v2)');
+      if (IS_DEV) console.log('WS connected');
       setStatus('idle');
-      // Auth Handshake
       socket.send(JSON.stringify({
         type: 'hello_ack',
         deviceId: DEVICE_ID,
-        token: localStorage.getItem('session_token')
+        token: localStorage.getItem('session_token'),
+        platform: IS_NATIVE ? 'android' : 'web'
       }));
     };
 
     const playSound = () => {
       try {
         const audio = new Audio('/sounds/pop.ogg');
-        audio.volume = 1.0; // Max volume
+        audio.volume = 1.0;
         const promise = audio.play();
         if (promise !== undefined) {
-          promise.then(() => { if (IS_DEV) console.log('Sound played'); })
-            .catch(e => console.warn('Audio blocked (interaction needed):', e));
+          promise.catch((e) => {
+            if (IS_DEV) console.warn('Audio blocked:', e?.message || e);
+          });
         }
-      } catch (e) { console.error('Audio error:', e); }
+      } catch (e) {
+        console.error('Audio error:', e);
+      }
     };
 
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (IS_DEV) console.log('[WS DEBUG]', data.type, data); // Debug all incoming
+        if (IS_DEV) console.log('[WS]', data.type, data);
 
         switch (data.type) {
-          case 'onlineCount': setOnlineCount(data.count); break;
+          case 'onlineCount':
+            setOnlineCount(data.count);
+            break;
           case 'queued':
             setStatus('queued');
             setScreen('matching');
             break;
           case 'debug':
-            if (IS_DEV) console.log('%c[SERVER DEBUG]', 'color: #ff00ff; font-weight: bold', data.msg, data);
+            if (IS_DEV) console.log('[SERVER DEBUG]', data.msg, data);
             break;
           case 'matched':
             playSound();
@@ -178,39 +306,54 @@ function App() {
             setChatMode('anon');
             break;
           case 'message':
-            // Anon message
             setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
             setIsPeerTyping(false);
             playSound();
             break;
           case 'direct_message': {
-            // Friend message
             const senderId = data.fromUserId;
             const currentActive = activeFriendRef.current;
-            const currentMode = chatModeRef.current; // Access fresh ref
+            const currentMode = chatModeRef.current;
+            const isActiveConversation =
+              screenRef.current === 'chat' &&
+              currentMode === 'friends' &&
+              currentActive &&
+              currentActive.user_id === senderId;
 
-            if (currentMode === 'friends' && currentActive && currentActive.user_id === senderId) {
+            if (isActiveConversation) {
               setMessages(prev => [...prev, {
                 from: 'peer',
                 text: data.text,
-                msgType: data.msgType, // Fix: capture image type
-                mediaId: data.mediaId  // Fix: capture mediaId
+                msgType: data.msgType,
+                mediaId: data.mediaId
               }]);
             } else {
-              // Increment unread count
               setUnreadCounts(prev => ({
                 ...prev,
                 [senderId]: (prev[senderId] || 0) + 1
               }));
+
+              notifyIncoming({
+                title: data.fromNickname || data.fromUsername || 'Yeni mesaj',
+                body: data.msgType === 'image' ? 'Fotograf gonderdi' : (data.text || ''),
+                data: {
+                  type: 'direct_message',
+                  fromUserId: senderId,
+                  msgType: data.msgType || 'direct'
+                },
+                local: true
+              });
             }
-            playSound();
+
+            if (isActiveConversation || !IS_NATIVE) {
+              playSound();
+            }
             break;
           }
           case 'image_sent':
-            // Sender confirmation (Show 'View Photo' bubble on my side)
             setMessages(prev => [...prev, {
               from: 'me',
-              text: '📸 Fotoğraf',
+              text: 'Fotograf',
               msgType: 'image',
               mediaId: data.mediaId
             }]);
@@ -222,7 +365,7 @@ function App() {
             setIsPeerTyping(false);
             break;
           case 'ended':
-            setMessages(prev => [...prev, { from: 'system', text: 'Sohbet sonlandı.' }]);
+            setMessages(prev => [...prev, { from: 'system', text: 'Sohbet sonlandi.' }]);
             setStatus('ended');
             break;
           case 'image_data':
@@ -230,13 +373,10 @@ function App() {
               clearTimeout(imageFetchTimeoutRef.current);
               imageFetchTimeoutRef.current = null;
             }
-
             setImageViewer(prev => {
               if (!prev.open || prev.mediaId !== data.mediaId) return prev;
               return { ...prev, status: 'ready', dataUrl: data.imageData, error: null };
             });
-
-            // Mark as expired immediately (View Once)
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
             break;
           case 'image_error':
@@ -244,42 +384,53 @@ function App() {
               clearTimeout(imageFetchTimeoutRef.current);
               imageFetchTimeoutRef.current = null;
             }
-
             setImageViewer(prev => {
               if (!prev.open || prev.mediaId !== data.mediaId) return prev;
-              return { ...prev, status: 'error', error: data.message || 'Fotoğraf yüklenemedi.' };
+              return { ...prev, status: 'error', error: data.message || 'Fotograf yuklenemedi.' };
             });
-
-            // Mark as expired in UI
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
             break;
           case 'friend_refresh':
             loadFriends();
             break;
+          case 'admin_notice': {
+            const durationMs = Number(data.durationMs || 10000);
+            showToast(data.title || 'Duyuru', data.body || '', durationMs);
+            break;
+          }
+          default:
+            break;
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+      }
     };
 
     socket.onclose = () => {
       setStatus('disconnected');
       ws.current = null;
     };
-
-  }, [user]); // Removed activeFriend and chatMode dependencies
+  }, [user, loadFriends, notifyIncoming, showToast]);
 
   useEffect(() => {
     if (user) connect();
   }, [user, connect]);
 
-
-  // --- Actions ---
   const handleLogout = async () => {
+    if (pushTokenRef.current) {
+      try {
+        await pushApi.unregister({ token: pushTokenRef.current, deviceId: DEVICE_ID });
+      } catch (e) {
+        if (IS_DEV) console.warn('Push unregister failed:', e?.message || e);
+      }
+      pushTokenRef.current = null;
+    }
+
     try { await auth.logout(); } catch (e) { console.error('Logout error:', e); }
 
     try { ws.current?.close(); } catch (e) { if (IS_DEV) console.warn('WS close failed:', e); }
     ws.current = null;
 
-    // Reset all app state
     setUser(null);
     setScreen('splash');
     setStatus('disconnected');
@@ -313,32 +464,32 @@ function App() {
   const handleStartFriendChat = async (friend) => {
     if (IS_DEV) console.log('Selected friend:', friend);
     setActiveFriend(friend);
-    setRoomId(null); // Clear anon room
+    setRoomId(null);
     setChatMode('friends');
     setPeerName(friend.display_name || friend.username);
-    setMessages([]); // Clear previous messages
+    setMessages([]);
     setScreen('chat');
-    setStatus('matched'); // Ensure status is active so input is shown
+    setStatus('matched');
 
-    // Clear unread
     setUnreadCounts(prev => {
       const newCounts = { ...prev };
       delete newCounts[friend.user_id];
       return newCounts;
     });
 
-    // Load history
     try {
       const hist = await friends.getHistory(friend.user_id);
       const histMsgs = (hist.data.messages || []).map(m => ({
-        from: m.from, // Backend already calculates 'me' or 'peer'
+        from: m.from,
         text: m.text,
         msgType: m.msgType,
         mediaId: m.mediaId,
         mediaExpired: m.mediaExpired
       }));
       setMessages(histMsgs);
-    } catch (e) { console.error('History error', e); }
+    } catch (e) {
+      console.error('History error', e);
+    }
 
     setScreen('chat');
   };
@@ -354,31 +505,35 @@ function App() {
   };
 
   const handleDeleteFriend = async (friendId) => {
-    if (!window.confirm('Bu arkadaşı silmek ve engellemek istediğine emin misin?')) return;
+    if (!window.confirm('Bu arkadasi silmek ve engellemek istediginize emin misiniz?')) return;
     try {
       await friends.delete(friendId);
-      loadFriends(); // Refresh list
-    } catch (e) { console.error(e); alert('Silinemedi.'); }
+      loadFriends();
+    } catch (e) {
+      console.error(e);
+      alert('Silinemedi.');
+    }
   };
 
   const handleAddFriend = async () => {
-    if (!peerUsername) return alert('Kullanıcı adı bilgisi yok.');
+    if (!peerUsername) return alert('Kullanici adi bilgisi yok.');
     try {
       await friends.request(peerUsername);
-      alert('Arkadaşlık isteği gönderildi!');
+      alert('Arkadaslik istegi gonderildi.');
     } catch (e) {
-      alert(e.response?.data?.error || 'İstek gönderilemedi.');
+      alert(e.response?.data?.error || 'Istek gonderilemedi.');
     }
   };
 
   const handleLeaveChat = () => {
     if (chatMode === 'anon') {
       if (status === 'queued') {
-        ws.current?.send(JSON.stringify({ type: 'leaveQueue' })); // Fix: Send explicit leaveQueue
+        ws.current?.send(JSON.stringify({ type: 'leaveQueue' }));
       } else {
         ws.current?.send(JSON.stringify({ type: 'leave' }));
       }
     }
+
     setScreen('home');
     setMessages([]);
     setRoomId(null);
@@ -386,62 +541,57 @@ function App() {
   };
 
   const handleSendMessage = (text) => {
-    if (IS_DEV) console.log('[App] handleSendMessage:', text, 'Mode:', chatMode);
-
-    // Optimistic Update
     setMessages(prev => [...prev, { from: 'me', text }]);
 
     if (chatMode === 'anon' && roomId) {
       ws.current?.send(JSON.stringify({ type: 'message', roomId, text }));
-    } else if (chatMode === 'friends' && activeFriend) {
-      if (IS_DEV) console.log('[App] Sending DM to:', activeFriend.user_id);
-      if (!activeFriend.user_id) console.error('[App] activeFriend has no user_id!', activeFriend);
+      return;
+    }
 
+    if (chatMode === 'friends' && activeFriend) {
       ws.current?.send(JSON.stringify({
         type: 'direct_message',
         targetUserId: activeFriend.user_id,
         text
       }));
-    } else {
-      if (IS_DEV) console.warn('[App] Message not sent. State invalid:', { chatMode, roomId, activeFriend });
+      return;
     }
+
+    if (IS_DEV) console.warn('[App] Message not sent: invalid state', { chatMode, roomId, activeFriend });
   };
 
   const handleTyping = () => {
-    if (ws.current?.readyState === WebSocket.OPEN) {
-      const now = Date.now();
-      // Only send 'typing' if it's been > 2s since last time
-      if (now - lastTypingSentRef.current > 2000) {
-        const payload = chatMode === 'friends' && activeFriend
-          ? { type: 'typing', targetUserId: activeFriend.user_id }
-          : { type: 'typing' };
+    if (ws.current?.readyState !== WebSocket.OPEN) return;
 
-        ws.current.send(JSON.stringify(payload));
-        lastTypingSentRef.current = now;
-      }
-
-      // Always reset the stop timer on every keystroke
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => {
-        const stopPayload = chatMode === 'friends' && activeFriend
-          ? { type: 'stop_typing', targetUserId: activeFriend.user_id }
-          : { type: 'stop_typing' };
-        ws.current.send(JSON.stringify(stopPayload));
-      }, 1000);
+    const now = Date.now();
+    if (now - lastTypingSentRef.current > 2000) {
+      const payload = chatMode === 'friends' && activeFriend
+        ? { type: 'typing', targetUserId: activeFriend.user_id }
+        : { type: 'typing' };
+      ws.current.send(JSON.stringify(payload));
+      lastTypingSentRef.current = now;
     }
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      const stopPayload = chatMode === 'friends' && activeFriend
+        ? { type: 'stop_typing', targetUserId: activeFriend.user_id }
+        : { type: 'stop_typing' };
+      ws.current?.send(JSON.stringify(stopPayload));
+    }, 1000);
   };
 
   const handleReport = () => {
-    const reason = prompt("Lütfen rapor sebebini belirtin (spam, hakaret, vb.):");
-    if (reason && ws.current?.readyState === WebSocket.OPEN) {
-      // Assuming backend supports 'report' type
-      if (chatMode === 'anon' && roomId) {
-        ws.current.send(JSON.stringify({ type: 'report', roomId, reason }));
-      } else if (chatMode === 'friends' && activeFriend) {
-        ws.current.send(JSON.stringify({ type: 'report', targetUserId: activeFriend.user_id, reason }));
-      }
-      alert('Raporunuz iletildi.');
+    const reason = prompt('Lutfen rapor sebebini belirtin (spam, hakaret, vb.):');
+    if (!reason || ws.current?.readyState !== WebSocket.OPEN) return;
+
+    if (chatMode === 'anon' && roomId) {
+      ws.current.send(JSON.stringify({ type: 'report', roomId, reason }));
+    } else if (chatMode === 'friends' && activeFriend) {
+      ws.current.send(JSON.stringify({ type: 'report', targetUserId: activeFriend.user_id, reason }));
     }
+
+    alert('Raporunuz iletildi.');
   };
 
   const closeImageViewer = () => {
@@ -452,17 +602,14 @@ function App() {
     setImageViewer(initialImageViewer);
   };
 
-  // Image Handlers
   const handleSendImage = (base64) => {
-    if (chatMode === 'friends' && activeFriend) {
-      ws.current?.send(JSON.stringify({
-        type: 'direct_image_send',
-        targetUserId: activeFriend.user_id,
-        imageData: base64
-      }));
-      // Optimistic: Add "camera" message? Backend echoes back 'direct_message' with type image.
-      // So we wait for echo.
-    }
+    if (chatMode !== 'friends' || !activeFriend?.user_id) return;
+
+    ws.current?.send(JSON.stringify({
+      type: 'direct_image_send',
+      targetUserId: activeFriend.user_id,
+      imageData: base64
+    }));
   };
 
   const handleViewImage = (mediaId) => {
@@ -486,31 +633,43 @@ function App() {
     imageFetchTimeoutRef.current = setTimeout(() => {
       setImageViewer(prev => {
         if (!prev.open || prev.mediaId !== mediaId || prev.status !== 'loading') return prev;
-        return { ...prev, status: 'error', error: 'Zaman aşımı. Tekrar deneyin.' };
+        return { ...prev, status: 'error', error: 'Zaman asimi. Tekrar deneyin.' };
       });
       imageFetchTimeoutRef.current = null;
     }, IMAGE_FETCH_TIMEOUT_MS);
   };
 
-  // Update socket.onmessage inside connect()
-  // ...
-  // See next Replace block for socket update
+  const toastStack = useMemo(() => (
+    <div className="admin-toast-stack">
+      {notices.map((notice) => (
+        <div key={notice.id} className="admin-toast" role="status" aria-live="polite">
+          <button className="admin-toast-close" onClick={() => dismissToast(notice.id)} aria-label="Close">x</button>
+          <div className="admin-toast-title">{notice.title}</div>
+          <div className="admin-toast-body">{notice.body}</div>
+        </div>
+      ))}
+    </div>
+  ), [notices, dismissToast]);
 
-  // --- Render Flow ---
-  if (!user) return <Auth onLogin={setUser} />;
+  const withToasts = (content) => (
+    <>
+      {content}
+      {toastStack}
+    </>
+  );
 
-  // 1. Splash
+  if (!user) return withToasts(<Auth onLogin={setUser} />);
+
   if (screen === 'splash') {
-    return <SplashScreen onFinish={() => setScreen('home')} />;
+    return withToasts(<SplashScreen onFinish={() => setScreen('home')} />);
   }
 
-  // 2. Home
   if (screen === 'home') {
     const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
-    return (
+    return withToasts(
       <HomeScreen
         onlineCount={onlineCount}
-        unreadCount={totalUnread + (friendRequests.length || 0)} // Add friend requests to badge
+        unreadCount={totalUnread + (friendRequests.length || 0)}
         onLogout={handleLogout}
         onSelectMode={(mode) => {
           if (mode === 'anon') handleStartAnon();
@@ -523,9 +682,8 @@ function App() {
     );
   }
 
-  // 5. Friends
   if (screen === 'friends') {
-    return (
+    return withToasts(
       <FriendsScreen
         friends={friendList}
         requests={friendRequests}
@@ -534,14 +692,13 @@ function App() {
         onChat={handleStartFriendChat}
         onAccept={handleAcceptRequest}
         onReject={handleRejectRequest}
-        onDelete={handleDeleteFriend} // New
+        onDelete={handleDeleteFriend}
       />
     );
   }
 
-  // 3. Match / Queue
   if (screen === 'matching') {
-    return (
+    return withToasts(
       <MatchScreen
         onCancel={handleLeaveChat}
         onMatchMock={() => undefined}
@@ -549,9 +706,8 @@ function App() {
     );
   }
 
-  // 4. Chat
   if (screen === 'chat') {
-    return (
+    return withToasts(
       <ChatScreen
         messages={messages}
         currentUserId={user.id}
@@ -560,13 +716,12 @@ function App() {
         onLeave={handleLeaveChat}
         onNewMatch={handleStartAnon}
         onReport={handleReport}
-        onAddFriend={handleAddFriend} // New
-        peerId={peerId} // New
+        onAddFriend={handleAddFriend}
+        peerId={peerId}
         isTyping={isPeerTyping}
         onTyping={handleTyping}
         isFriendMode={chatMode === 'friends'}
         isChatEnded={status === 'ended'}
-        // Image Logic
         onSendImage={handleSendImage}
         onViewImage={handleViewImage}
         onRetryViewImage={handleViewImage}
@@ -576,7 +731,7 @@ function App() {
     );
   }
 
-  return <div>Unknown State</div>;
+  return withToasts(<div>Unknown State</div>);
 }
 
 export default App;

@@ -67,6 +67,11 @@ export const friends = {
     getHistory: (friendId) => api.get(`/friends/history/${friendId}`)
 };
 
+export const push = {
+    register: (payload) => api.post('/api/push/register', payload),
+    unregister: (payload) => api.post('/api/push/unregister', payload)
+};
+
 export const getAvatar = (seed) => {
     return `https://api.dicebear.com/9.x/bottts/svg?seed=${seed || 'anon'}`;
 };
