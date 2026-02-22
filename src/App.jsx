@@ -228,6 +228,16 @@ function App() {
     }
   }, [showToast]);
 
+  const normalizeAdminNotice = useCallback(({ title, body, data }) => {
+    const sourceTitle = 'TalkX';
+    const noticeTitle = String(data?.noticeTitle || '').trim() || String(title || '').trim();
+    const noticeBody = String(body || data?.body || '').trim();
+    const combinedBody = noticeTitle && noticeBody
+      ? `${noticeTitle}\n${noticeBody}`
+      : (noticeBody || noticeTitle || 'Yeni duyuru');
+    return { title: sourceTitle, body: combinedBody };
+  }, []);
+
   const registerPushToken = useCallback(async (tokenValue) => {
     if (!user || !tokenValue) return;
     if (pushTokenRef.current === tokenValue) return;
@@ -262,12 +272,13 @@ function App() {
     const channelId = data.channelId || (type === 'admin_notice' ? 'talkx_admin' : 'talkx_messages');
 
     if (type === 'admin_notice') {
+      const normalized = normalizeAdminNotice({ title, body, data });
       const durationMs = Number(data.durationMs || 10000);
-      showToast(title, body, durationMs);
+      showToast(normalized.title, normalized.body, durationMs);
       if (fromPushEvent) {
         await showLocalNotification({
-          title,
-          body,
+          title: normalized.title,
+          body: normalized.body,
           data: { ...data, deliveryId, channelId }
         });
       }
@@ -289,7 +300,7 @@ function App() {
           body,
           data: { ...data, deliveryId, channelId },
           durationMs: 10000,
-          local: true
+          local: fromPushEvent
         });
       }
       return;
@@ -302,7 +313,7 @@ function App() {
         data: { ...data, deliveryId, channelId }
       });
     }
-  }, [notifyIncoming, showToast, shouldProcessDelivery]);
+  }, [normalizeAdminNotice, notifyIncoming, showToast, shouldProcessDelivery]);
 
   useEffect(() => {
     if (!user) return;
@@ -433,7 +444,7 @@ function App() {
                   deliveryId,
                   channelId: 'talkx_messages'
                 },
-                local: true
+                local: false
               });
             }
 
@@ -489,7 +500,12 @@ function App() {
             const deliveryId = data.deliveryId || null;
             if (!shouldProcessDelivery(deliveryId)) break;
             const durationMs = Number(data.durationMs || 10000);
-            showToast(data.title || 'Duyuru', data.body || '', durationMs);
+            const normalized = normalizeAdminNotice({
+              title: data.title,
+              body: data.body,
+              data
+            });
+            showToast(normalized.title, normalized.body, durationMs);
             break;
           }
           default:
@@ -504,7 +520,7 @@ function App() {
       setStatus('disconnected');
       ws.current = null;
     };
-  }, [user, loadFriends, notifyIncoming, showToast, shouldProcessDelivery]);
+  }, [user, loadFriends, normalizeAdminNotice, notifyIncoming, showToast, shouldProcessDelivery]);
 
   useEffect(() => {
     if (user) connect();
