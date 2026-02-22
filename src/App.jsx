@@ -41,6 +41,8 @@ const OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;
 const OUTBOX_ACK_TIMEOUT_MS = 15000;
 const OUTBOX_MAX_ATTEMPTS = 5;
 const PUSH_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const PUSH_LAST_REGISTER_AT_KEY = 'talkx_push_last_register_at';
+const PUSH_LAST_REGISTER_ERROR_KEY = 'talkx_push_last_register_error';
 const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const nowTs = () => Date.now();
 
@@ -387,6 +389,8 @@ function App() {
     nativePushTokenRef.current = tokenValue;
     if (!force && pushTokenRef.current === tokenValue) return true;
 
+    const previousToken = pushTokenRef.current;
+    let lastError = null;
     const retryMs = [0, 2000, 5000];
     for (let i = 0; i < retryMs.length; i += 1) {
       if (retryMs[i] > 0) await waitMs(retryMs[i]);
@@ -399,14 +403,43 @@ function App() {
         pushTokenRef.current = tokenValue;
         pushRetryAttemptRef.current = 0;
         clearPushRetry();
+        try {
+          localStorage.setItem(PUSH_LAST_REGISTER_AT_KEY, new Date().toISOString());
+          localStorage.removeItem(PUSH_LAST_REGISTER_ERROR_KEY);
+        } catch {
+          // Telemetry is best-effort only.
+        }
+        if (IS_DEV && previousToken !== tokenValue) {
+          showToast('TalkX Debug', 'Push token alindi', 2600);
+        }
         return true;
       } catch (e) {
         const message = e?.response?.data || e?.message || e;
+        let msgText = '';
+        if (typeof message === 'string') {
+          msgText = message;
+        } else {
+          try {
+            msgText = JSON.stringify(message);
+          } catch {
+            msgText = String(message);
+          }
+        }
+        lastError = msgText;
         console.warn(`Push token register failed (attempt ${i + 1}/${retryMs.length}):`, message);
       }
     }
 
     pushTokenRef.current = null;
+    try {
+      const errText = String(lastError || 'Push register failed').slice(0, 320);
+      localStorage.setItem(PUSH_LAST_REGISTER_ERROR_KEY, `${new Date().toISOString()} | ${errText}`);
+    } catch {
+      // Telemetry is best-effort only.
+    }
+    if (IS_DEV) {
+      showToast('TalkX Debug', 'Push register basarisiz', 3200);
+    }
     if (!pushRetryTimerRef.current && user && nativePushTokenRef.current) {
       const step = Math.min(pushRetryAttemptRef.current, 8);
       const delay = withJitter(Math.min(5 * 60 * 1000, 2000 * (2 ** step)));
@@ -417,7 +450,7 @@ function App() {
       pushRetryAttemptRef.current += 1;
     }
     return false;
-  }, [clearPushRetry, user]);
+  }, [clearPushRetry, showToast, user]);
 
   const handlePushPayload = useCallback(async (payload = {}, fromPushEvent = false) => {
     const data = payload.data || {};
