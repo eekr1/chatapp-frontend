@@ -13,7 +13,8 @@ import {
   setupViewportInsets,
   configureNativeSystemUi,
   initNativePush,
-  showLocalNotification
+  showLocalNotification,
+  CHANNEL_IDS
 } from './utils/nativeBridge';
 
 const getDeviceId = () => {
@@ -269,7 +270,7 @@ function App() {
     const type = data.type || payload.type;
     const deliveryId = data.deliveryId || payload.deliveryId || payload.notification?.data?.deliveryId;
     if (!shouldProcessDelivery(deliveryId)) return;
-    const channelId = data.channelId || (type === 'admin_notice' ? 'talkx_admin' : 'talkx_messages');
+    const channelId = data.channelId || (type === 'admin_notice' ? CHANNEL_IDS.admin : CHANNEL_IDS.messages);
 
     if (type === 'admin_notice') {
       const normalized = normalizeAdminNotice({ title, body, data });
@@ -442,7 +443,7 @@ function App() {
                   fromUserId: senderId,
                   msgType: data.msgType || 'direct',
                   deliveryId,
-                  channelId: 'talkx_messages'
+                  channelId: CHANNEL_IDS.messages
                 },
                 local: false
               });

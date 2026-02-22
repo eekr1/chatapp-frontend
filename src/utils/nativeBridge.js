@@ -1,27 +1,39 @@
 const getPlugins = () => window.Capacitor?.Plugins || {};
+export const CHANNEL_IDS = {
+    messages: 'talkx_messages_v2',
+    admin: 'talkx_admin_v2',
+    default: 'talkx_default_v2'
+};
+const LEGACY_CHANNEL_IDS = ['talkx_messages', 'talkx_admin', 'talkx_default'];
 const PUSH_CHANNELS = [
     {
-        id: 'talkx_messages',
+        id: CHANNEL_IDS.messages,
         name: 'TalkX Messages',
         description: 'Friend message notifications',
         importance: 5,
         sound: 'default',
+        vibration: true,
+        lights: true,
         visibility: 1
     },
     {
-        id: 'talkx_admin',
+        id: CHANNEL_IDS.admin,
         name: 'TalkX Announcements',
         description: 'System and admin announcements',
-        importance: 4,
+        importance: 5,
         sound: 'default',
+        vibration: true,
+        lights: true,
         visibility: 1
     },
     {
-        id: 'talkx_default',
+        id: CHANNEL_IDS.default,
         name: 'TalkX General',
         description: 'Fallback notifications',
-        importance: 3,
+        importance: 5,
         sound: 'default',
+        vibration: true,
+        lights: true,
         visibility: 1
     }
 ];
@@ -114,6 +126,16 @@ export const initNativePush = async ({ onToken, onPushReceived, onPushAction }) 
         if (PushNotifications.listChannels && PushNotifications.createChannel) {
             const existing = await PushNotifications.listChannels();
             const existingIds = new Set((existing?.channels || []).map((c) => c.id));
+            if (PushNotifications.deleteChannel) {
+                for (const legacyId of LEGACY_CHANNEL_IDS) {
+                    if (!existingIds.has(legacyId)) continue;
+                    try {
+                        await PushNotifications.deleteChannel({ id: legacyId });
+                    } catch (e) {
+                        console.warn(`Legacy channel delete skipped (${legacyId}):`, e?.message || e);
+                    }
+                }
+            }
             for (const channel of PUSH_CHANNELS) {
                 if (existingIds.has(channel.id)) continue;
                 await PushNotifications.createChannel(channel);
@@ -153,7 +175,7 @@ export const showLocalNotification = async ({ title, body, data }) => {
         if (perm.display !== 'granted') return false;
 
         const notificationId = Math.floor(Date.now() % 2147483000);
-        const channelId = data?.channelId || 'talkx_default';
+        const channelId = data?.channelId || CHANNEL_IDS.default;
         await LocalNotifications.schedule({
             notifications: [{
                 id: notificationId,
