@@ -4,8 +4,15 @@ const isNative = typeof window !== 'undefined' && (
     (typeof window.Capacitor?.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
     Boolean(window.Capacitor?.isNative)
 );
-// Prioritize ENV variable first (Production), then Native (Emulator), then default (Proxy/Local)
-const baseURL = import.meta.env.VITE_API_URL || (isNative ? 'http://10.0.2.2:3000' : '');
+const envApiUrl = String(import.meta.env.VITE_API_URL || '').trim();
+const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+const isLikelyAndroidEmulator = /sdk_gphone|sdk_phone|emulator|Android SDK built for x86/i.test(ua);
+const useEmulatorFallback = Boolean(isNative && import.meta.env.DEV && isLikelyAndroidEmulator);
+const baseURL = envApiUrl || (useEmulatorFallback ? 'http://10.0.2.2:3000' : '');
+
+if (import.meta.env.DEV && isNative && !baseURL) {
+    console.warn('VITE_API_URL is empty on native app; backend API requests may fail.');
+}
 
 const api = axios.create({
     baseURL

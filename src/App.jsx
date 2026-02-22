@@ -33,7 +33,83 @@ const TOAST_DEFAULT_MS = 10000;
 const TOAST_EXIT_MS = 280;
 const DELIVERY_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const DELIVERY_DEDUPE_MAX = 500;
+const WS_RETRY_STEPS_MS = [1000, 2000, 5000, 10000];
+const WS_RETRY_MAX_MS = 10000;
+const OUTBOX_STORAGE_KEY = 'talkx_pending_outbox_v1';
+const OUTBOX_MAX_ITEMS = 100;
+const OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;
+const OUTBOX_ACK_TIMEOUT_MS = 15000;
+const OUTBOX_MAX_ATTEMPTS = 5;
+const PUSH_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const nowTs = () => Date.now();
+
+const randomId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `cm-${Math.random().toString(36).slice(2, 12)}-${Date.now().toString(36)}`;
+};
+
+const clampOutbox = (items = []) => {
+  const now = nowTs();
+  const cleaned = (items || [])
+    .filter(Boolean)
+    .filter((item) => (Number(item.expiresAt) || 0) > now)
+    .slice(-OUTBOX_MAX_ITEMS);
+  return cleaned;
+};
+
+const safeParseOutbox = () => {
+  try {
+    const raw = localStorage.getItem(OUTBOX_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return clampOutbox(parsed);
+  } catch {
+    return [];
+  }
+};
+
+const persistOutbox = (items = []) => {
+  try {
+    localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(clampOutbox(items)));
+  } catch (e) {
+    console.warn('Outbox persistence failed:', e?.message || e);
+  }
+};
+
+const withJitter = (baseMs) => {
+  const jitter = 1 + ((Math.random() * 0.4) - 0.2);
+  return Math.max(250, Math.round(baseMs * jitter));
+};
+
+const resolveWsUrl = ({ isNative, isDev }) => {
+  const explicitWs = String(import.meta.env.VITE_WS_URL || '').trim();
+  if (explicitWs) return explicitWs;
+
+  const apiUrl = String(import.meta.env.VITE_API_URL || '').trim();
+  if (apiUrl) {
+    try {
+      const u = new URL(apiUrl);
+      const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProto}//${u.host}`;
+    } catch (e) {
+      if (isDev) console.warn('Invalid VITE_API_URL for WS derivation:', apiUrl, e?.message || e);
+    }
+  }
+
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  const isLikelyEmulator = /sdk_gphone|sdk_phone|emulator|Android SDK built for x86/i.test(ua);
+  if (isNative && isDev && isLikelyEmulator) return 'ws://10.0.2.2:3000';
+  if (isNative && !isDev) return '';
+
+  const host = window.location.host;
+  if (host.includes('localhost')) return 'ws://localhost:3000';
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${host}`;
+};
 
 function App() {
   const [screen, setScreen] = useState('splash');
@@ -41,6 +117,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [onlineCount, setOnlineCount] = useState(0);
   const [status, setStatus] = useState('disconnected');
+  const [wsStatus, setWsStatus] = useState('disconnected');
 
   const [friendList, setFriendList] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
@@ -58,12 +135,27 @@ function App() {
   const [notices, setNotices] = useState([]);
 
   const ws = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const reconnectAttemptRef = useRef(0);
+  const shouldReconnectRef = useRef(false);
+  const wsAuthenticatedRef = useRef(false);
+  const wsConfigWarnedRef = useRef(false);
+  const intentionalCloseRef = useRef(false);
   const typingTimeoutRef = useRef(null);
   const lastTypingSentRef = useRef(0);
   const toastTimersRef = useRef(new Map());
   const noticesRef = useRef(notices);
   const pushTokenRef = useRef(null);
+  const nativePushTokenRef = useRef(null);
+  const pushRetryTimerRef = useRef(null);
+  const pushRetryAttemptRef = useRef(0);
   const seenDeliveryRef = useRef(new Map());
+  const outboxRef = useRef([]);
+  const ackTimersRef = useRef(new Map());
+  const inFlightRef = useRef(new Set());
+  const outboxReadyRef = useRef(false);
+  const flushOutboxFnRef = useRef(() => { });
+  const connectWsFnRef = useRef(() => { });
 
   const IMAGE_FETCH_TIMEOUT_MS = 12000;
   const initialImageViewer = {
@@ -103,6 +195,43 @@ function App() {
       oldest.forEach(([id]) => map.delete(id));
     }
     return true;
+  }, []);
+
+  const clearAckTimer = useCallback((clientMsgId) => {
+    const t = ackTimersRef.current.get(clientMsgId);
+    if (t) {
+      clearTimeout(t);
+      ackTimersRef.current.delete(clientMsgId);
+    }
+  }, []);
+
+  const setMessageSendState = useCallback((clientMsgId, patch = {}) => {
+    if (!clientMsgId) return;
+    setMessages((prev) => prev.map((m) => (
+      m.clientMsgId === clientMsgId
+        ? { ...m, ...patch }
+        : m
+    )));
+  }, []);
+
+  const applyOutbox = useCallback((mutator) => {
+    const current = outboxRef.current.slice();
+    const next = clampOutbox(mutator(current));
+    outboxRef.current = next;
+    persistOutbox(next);
+    return next;
+  }, []);
+
+  const dropOutboxItem = useCallback((clientMsgId) => {
+    if (!clientMsgId) return;
+    applyOutbox((items) => items.filter((i) => i.clientMsgId !== clientMsgId));
+    inFlightRef.current.delete(clientMsgId);
+    clearAckTimer(clientMsgId);
+  }, [applyOutbox, clearAckTimer]);
+
+  useEffect(() => {
+    outboxRef.current = safeParseOutbox();
+    outboxReadyRef.current = true;
   }, []);
 
   const clearToastTimers = useCallback((id) => {
@@ -177,6 +306,13 @@ function App() {
     };
   }, []);
 
+  useEffect(() => () => {
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    if (pushRetryTimerRef.current) clearTimeout(pushRetryTimerRef.current);
+    ackTimersRef.current.forEach((t) => clearTimeout(t));
+    ackTimersRef.current.clear();
+  }, []);
+
   const loadFriends = useCallback(async () => {
     try {
       const res = await friends.list();
@@ -239,9 +375,17 @@ function App() {
     return { title: sourceTitle, body: combinedBody };
   }, []);
 
-  const registerPushToken = useCallback(async (tokenValue) => {
-    if (!user || !tokenValue) return;
-    if (pushTokenRef.current === tokenValue) return;
+  const clearPushRetry = useCallback(() => {
+    if (pushRetryTimerRef.current) {
+      clearTimeout(pushRetryTimerRef.current);
+      pushRetryTimerRef.current = null;
+    }
+  }, []);
+
+  const registerPushToken = useCallback(async (tokenValue, { force = false } = {}) => {
+    if (!user || !tokenValue) return false;
+    nativePushTokenRef.current = tokenValue;
+    if (!force && pushTokenRef.current === tokenValue) return true;
 
     const retryMs = [0, 2000, 5000];
     for (let i = 0; i < retryMs.length; i += 1) {
@@ -253,15 +397,27 @@ function App() {
           deviceId: DEVICE_ID
         });
         pushTokenRef.current = tokenValue;
-        if (IS_DEV) console.log('Push token registered');
-        return;
+        pushRetryAttemptRef.current = 0;
+        clearPushRetry();
+        return true;
       } catch (e) {
         const message = e?.response?.data || e?.message || e;
         console.warn(`Push token register failed (attempt ${i + 1}/${retryMs.length}):`, message);
       }
     }
+
     pushTokenRef.current = null;
-  }, [user]);
+    if (!pushRetryTimerRef.current && user && nativePushTokenRef.current) {
+      const step = Math.min(pushRetryAttemptRef.current, 8);
+      const delay = withJitter(Math.min(5 * 60 * 1000, 2000 * (2 ** step)));
+      pushRetryTimerRef.current = window.setTimeout(async () => {
+        pushRetryTimerRef.current = null;
+        await registerPushToken(nativePushTokenRef.current, { force: true });
+      }, delay);
+      pushRetryAttemptRef.current += 1;
+    }
+    return false;
+  }, [clearPushRetry, user]);
 
   const handlePushPayload = useCallback(async (payload = {}, fromPushEvent = false) => {
     const data = payload.data || {};
@@ -316,45 +472,142 @@ function App() {
     }
   }, [normalizeAdminNotice, notifyIncoming, showToast, shouldProcessDelivery]);
 
-  useEffect(() => {
-    if (!user) return;
-    let dispose = () => { };
-
-    (async () => {
-      dispose = await initNativePush({
-        onToken: registerPushToken,
-        onPushReceived: (notification) => {
-          handlePushPayload(notification, true);
-        },
-        onPushAction: (notification) => {
-          handlePushPayload(notification.notification || notification, false);
-        }
-      });
-    })();
-
-    return () => {
-      try {
-        dispose();
-      } catch (e) {
-        if (IS_DEV) console.warn('Push dispose failed:', e?.message || e);
+  const playSound = useCallback(() => {
+    try {
+      const audio = new Audio('/sounds/pop.ogg');
+      audio.volume = 1.0;
+      const promise = audio.play();
+      if (promise !== undefined) {
+        promise.catch((e) => {
+          if (IS_DEV) console.warn('Audio blocked:', e?.message || e);
+        });
       }
-    };
-  }, [user, registerPushToken, handlePushPayload]);
+    } catch (e) {
+      console.error('Audio error:', e);
+    }
+  }, []);
+
+  const isWsReady = useCallback(() => (
+    ws.current?.readyState === WebSocket.OPEN && wsAuthenticatedRef.current
+  ), []);
+
+  const handleDirectMessageAck = useCallback((data = {}) => {
+    const clientMsgId = data.clientMsgId || null;
+    if (!clientMsgId) return;
+
+    inFlightRef.current.delete(clientMsgId);
+    clearAckTimer(clientMsgId);
+
+    if (data.status === 'sent' || data.status === 'duplicate') {
+      dropOutboxItem(clientMsgId);
+      setMessageSendState(clientMsgId, {
+        sendState: 'sent',
+        mediaId: data.mediaId || undefined,
+        conversationId: data.conversationId || undefined
+      });
+      return;
+    }
+
+    dropOutboxItem(clientMsgId);
+    setMessageSendState(clientMsgId, { sendState: 'failed', errorCode: data.errorCode || 'SEND_FAILED' });
+  }, [clearAckTimer, dropOutboxItem, setMessageSendState]);
+
+  const sendOutboxItem = useCallback((item) => {
+    if (!item?.clientMsgId || !isWsReady()) return false;
+    if (inFlightRef.current.has(item.clientMsgId)) return true;
+
+    try {
+      ws.current.send(JSON.stringify(item.payload));
+    } catch (e) {
+      console.warn('Outbox send failed:', e?.message || e);
+      return false;
+    }
+
+    inFlightRef.current.add(item.clientMsgId);
+    applyOutbox((items) => items.map((entry) => (
+      entry.clientMsgId === item.clientMsgId
+        ? { ...entry, attempts: (Number(entry.attempts) || 0) + 1, lastAttemptAt: nowTs() }
+        : entry
+    )));
+
+    clearAckTimer(item.clientMsgId);
+    const timer = window.setTimeout(() => {
+      inFlightRef.current.delete(item.clientMsgId);
+      clearAckTimer(item.clientMsgId);
+
+      const current = outboxRef.current.find((entry) => entry.clientMsgId === item.clientMsgId);
+      if (!current) return;
+      if ((Number(current.attempts) || 0) >= OUTBOX_MAX_ATTEMPTS) {
+        dropOutboxItem(item.clientMsgId);
+        setMessageSendState(item.clientMsgId, { sendState: 'failed', errorCode: 'ACK_TIMEOUT' });
+        showToast('TalkX', 'Mesaj gonderilemedi. Baglanti kontrol edin.', 6000);
+        return;
+      }
+
+      setMessageSendState(item.clientMsgId, { sendState: 'pending' });
+      flushOutboxFnRef.current();
+    }, OUTBOX_ACK_TIMEOUT_MS);
+    ackTimersRef.current.set(item.clientMsgId, timer);
+    return true;
+  }, [applyOutbox, clearAckTimer, dropOutboxItem, isWsReady, setMessageSendState, showToast]);
+
+  const flushOutbox = useCallback(() => {
+    if (!isWsReady()) return;
+    const queue = clampOutbox(outboxRef.current.slice())
+      .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
+    if (!queue.length) return;
+    queue.forEach((item) => sendOutboxItem(item));
+  }, [isWsReady, sendOutboxItem]);
+
+  useEffect(() => {
+    flushOutboxFnRef.current = flushOutbox;
+  }, [flushOutbox]);
+
+  const enqueueOutboxItem = useCallback((item) => {
+    if (!item?.clientMsgId) return;
+    applyOutbox((items) => {
+      const filtered = items.filter((entry) => entry.clientMsgId !== item.clientMsgId);
+      return [...filtered, item];
+    });
+    setMessageSendState(item.clientMsgId, { sendState: 'pending' });
+    flushOutboxFnRef.current();
+  }, [applyOutbox, setMessageSendState]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (!shouldReconnectRef.current || intentionalCloseRef.current || !user) return;
+    if (reconnectTimerRef.current) return;
+    const idx = Math.min(reconnectAttemptRef.current, WS_RETRY_STEPS_MS.length - 1);
+    const delay = withJitter(Math.min(WS_RETRY_STEPS_MS[idx], WS_RETRY_MAX_MS));
+    setWsStatus('reconnecting');
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null;
+      reconnectAttemptRef.current += 1;
+      connectWsFnRef.current();
+    }, delay);
+  }, [user]);
 
   const connect = useCallback(() => {
-    if (!user || ws.current?.readyState === WebSocket.OPEN) return;
+    if (!user) return;
+    if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) return;
 
-    const host = window.location.host;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const fallbackUrl = `${protocol}//${host}`;
-    const WS_URL = import.meta.env.VITE_WS_URL || (IS_NATIVE ? 'ws://10.0.2.2:3000' : (host.includes('localhost') ? 'ws://localhost:3000' : fallbackUrl));
+    const wsUrl = resolveWsUrl({ isNative: IS_NATIVE, isDev: IS_DEV });
+    if (!wsUrl) {
+      setWsStatus('disconnected');
+      if (!wsConfigWarnedRef.current) {
+        wsConfigWarnedRef.current = true;
+        console.warn('WebSocket URL is not configured. Set VITE_WS_URL or VITE_API_URL.');
+        showToast('TalkX', 'WS URL ayari eksik. VITE_WS_URL/VITE_API_URL kontrol et.', 8000);
+      }
+      return;
+    }
 
-    const socket = new WebSocket(WS_URL);
+    setWsStatus(reconnectAttemptRef.current > 0 ? 'reconnecting' : 'connecting');
+    wsAuthenticatedRef.current = false;
+    const socket = new WebSocket(wsUrl);
     ws.current = socket;
 
     socket.onopen = () => {
-      if (IS_DEV) console.log('WS connected');
-      setStatus('idle');
+      if (ws.current !== socket) return;
       socket.send(JSON.stringify({
         type: 'hello_ack',
         deviceId: DEVICE_ID,
@@ -363,27 +616,19 @@ function App() {
       }));
     };
 
-    const playSound = () => {
-      try {
-        const audio = new Audio('/sounds/pop.ogg');
-        audio.volume = 1.0;
-        const promise = audio.play();
-        if (promise !== undefined) {
-          promise.catch((e) => {
-            if (IS_DEV) console.warn('Audio blocked:', e?.message || e);
-          });
-        }
-      } catch (e) {
-        console.error('Audio error:', e);
-      }
-    };
-
     socket.onmessage = (event) => {
+      if (ws.current !== socket) return;
       try {
         const data = JSON.parse(event.data);
         if (IS_DEV) console.log('[WS]', data.type, data);
 
         switch (data.type) {
+          case 'welcome':
+            wsAuthenticatedRef.current = true;
+            reconnectAttemptRef.current = 0;
+            setWsStatus('connected');
+            flushOutboxFnRef.current();
+            break;
           case 'onlineCount':
             setOnlineCount(data.count);
             break;
@@ -409,6 +654,29 @@ function App() {
             setMessages(prev => [...prev, { from: 'peer', text: data.text }]);
             setIsPeerTyping(false);
             playSound();
+            break;
+          case 'direct_message_ack':
+            handleDirectMessageAck(data);
+            break;
+          case 'error':
+            if (data.clientMsgId) {
+              dropOutboxItem(data.clientMsgId);
+              setMessageSendState(data.clientMsgId, { sendState: 'failed', errorCode: data.code || 'SERVER_ERROR' });
+            }
+            if (data.code === 'AUTH_ERROR') {
+              ackTimersRef.current.forEach((t) => clearTimeout(t));
+              ackTimersRef.current.clear();
+              inFlightRef.current.clear();
+              outboxRef.current = [];
+              persistOutbox([]);
+              setWsStatus('auth_error');
+              shouldReconnectRef.current = false;
+              localStorage.removeItem('session_token');
+              setUser(null);
+              setScreen('splash');
+            } else if (data.message) {
+              showToast('TalkX', data.message, 5000);
+            }
             break;
           case 'direct_message': {
             const senderId = data.fromUserId;
@@ -455,12 +723,16 @@ function App() {
             break;
           }
           case 'image_sent':
-            setMessages(prev => [...prev, {
-              from: 'me',
-              text: 'Fotograf',
-              msgType: 'image',
-              mediaId: data.mediaId
-            }]);
+            if (data.clientMsgId) {
+              setMessageSendState(data.clientMsgId, { sendState: 'sent', mediaId: data.mediaId });
+            } else {
+              setMessages(prev => [...prev, {
+                from: 'me',
+                text: 'Fotograf',
+                msgType: 'image',
+                mediaId: data.mediaId
+              }]);
+            }
             break;
           case 'typing':
             setIsPeerTyping(true);
@@ -517,17 +789,120 @@ function App() {
       }
     };
 
-    socket.onclose = () => {
-      setStatus('disconnected');
-      ws.current = null;
+    socket.onerror = () => {
+      if (ws.current !== socket) return;
+      setWsStatus('reconnecting');
     };
-  }, [user, loadFriends, normalizeAdminNotice, notifyIncoming, showToast, shouldProcessDelivery]);
+
+    socket.onclose = () => {
+      if (ws.current === socket) ws.current = null;
+      wsAuthenticatedRef.current = false;
+      setWsStatus('disconnected');
+      if (!intentionalCloseRef.current) scheduleReconnect();
+    };
+  }, [dropOutboxItem, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, user]);
 
   useEffect(() => {
-    if (user) connect();
-  }, [user, connect]);
+    connectWsFnRef.current = connect;
+  }, [connect]);
+
+  useEffect(() => {
+    if (!user) return;
+    shouldReconnectRef.current = true;
+    intentionalCloseRef.current = false;
+    connectWsFnRef.current();
+    return () => {
+      shouldReconnectRef.current = false;
+      intentionalCloseRef.current = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      wsAuthenticatedRef.current = false;
+      if (ws.current) {
+        try {
+          ws.current.close();
+        } catch (e) {
+          if (IS_DEV) console.warn('WS close failed:', e?.message || e);
+        }
+        ws.current = null;
+      }
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let dispose = () => { };
+
+    (async () => {
+      dispose = await initNativePush({
+        onToken: async (tokenValue) => {
+          nativePushTokenRef.current = tokenValue;
+          await registerPushToken(tokenValue, { force: true });
+        },
+        onPushReceived: (notification) => {
+          handlePushPayload(notification, true);
+        },
+        onPushAction: (notification) => {
+          handlePushPayload(notification.notification || notification, false);
+        }
+      });
+    })();
+
+    return () => {
+      try {
+        dispose();
+      } catch (e) {
+        if (IS_DEV) console.warn('Push dispose failed:', e?.message || e);
+      }
+    };
+  }, [user, registerPushToken, handlePushPayload]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const onForeground = () => {
+      if (document.visibilityState && document.visibilityState !== 'visible') return;
+      connectWsFnRef.current();
+      if (nativePushTokenRef.current) {
+        registerPushToken(nativePushTokenRef.current, { force: true });
+      }
+    };
+
+    const pushRefreshTimer = window.setInterval(() => {
+      if (nativePushTokenRef.current) {
+        registerPushToken(nativePushTokenRef.current, { force: true });
+      }
+    }, PUSH_REFRESH_INTERVAL_MS);
+
+    document.addEventListener('visibilitychange', onForeground);
+    document.addEventListener('resume', onForeground);
+    window.addEventListener('focus', onForeground);
+
+    return () => {
+      clearInterval(pushRefreshTimer);
+      document.removeEventListener('visibilitychange', onForeground);
+      document.removeEventListener('resume', onForeground);
+      window.removeEventListener('focus', onForeground);
+    };
+  }, [user, registerPushToken]);
 
   const handleLogout = async () => {
+    shouldReconnectRef.current = false;
+    intentionalCloseRef.current = true;
+    wsAuthenticatedRef.current = false;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    clearPushRetry();
+    pushRetryAttemptRef.current = 0;
+    ackTimersRef.current.forEach((t) => clearTimeout(t));
+    ackTimersRef.current.clear();
+    inFlightRef.current.clear();
+    outboxRef.current = [];
+    persistOutbox([]);
+
     if (pushTokenRef.current) {
       try {
         await pushApi.unregister({ token: pushTokenRef.current, deviceId: DEVICE_ID });
@@ -536,6 +911,7 @@ function App() {
       }
       pushTokenRef.current = null;
     }
+    nativePushTokenRef.current = null;
     seenDeliveryRef.current.clear();
 
     try { await auth.logout(); } catch (e) { console.error('Logout error:', e); }
@@ -546,6 +922,7 @@ function App() {
     setUser(null);
     setScreen('splash');
     setStatus('disconnected');
+    setWsStatus('disconnected');
     setOnlineCount(0);
 
     setFriendList([]);
@@ -569,6 +946,11 @@ function App() {
   };
 
   const handleStartAnon = () => {
+    if (!isWsReady()) {
+      showToast('TalkX', 'Baglanti yeniden kuruluyor. Lutfen tekrar deneyin.', 4500);
+      connectWsFnRef.current();
+      return;
+    }
     ws.current?.send(JSON.stringify({ type: 'joinQueue' }));
     setScreen('matching');
   };
@@ -595,10 +977,22 @@ function App() {
         from: m.from,
         text: m.text,
         msgType: m.msgType,
+        clientMsgId: m.clientMsgId || null,
         mediaId: m.mediaId,
-        mediaExpired: m.mediaExpired
+        mediaExpired: m.mediaExpired,
+        sendState: m.from === 'me' ? 'sent' : undefined
       }));
-      setMessages(histMsgs);
+      const sentClientIds = new Set(histMsgs.map((m) => m.clientMsgId).filter(Boolean));
+      const pendingMsgs = outboxRef.current
+        .filter((entry) => entry.targetUserId === friend.user_id && !sentClientIds.has(entry.clientMsgId))
+        .map((entry) => ({
+          from: 'me',
+          text: entry.kind === 'direct_image_send' ? 'Fotograf' : entry.text,
+          msgType: entry.kind === 'direct_image_send' ? 'image' : 'direct',
+          sendState: 'pending',
+          clientMsgId: entry.clientMsgId
+        }));
+      setMessages([...histMsgs, ...pendingMsgs]);
     } catch (e) {
       console.error('History error', e);
     }
@@ -653,19 +1047,45 @@ function App() {
   };
 
   const handleSendMessage = (text) => {
-    setMessages(prev => [...prev, { from: 'me', text }]);
-
     if (chatMode === 'anon' && roomId) {
+      if (!isWsReady()) {
+        showToast('TalkX', 'Baglanti yok. Mesaj gonderilemedi.', 4500);
+        connectWsFnRef.current();
+        return;
+      }
+      setMessages(prev => [...prev, { from: 'me', text }]);
       ws.current?.send(JSON.stringify({ type: 'message', roomId, text }));
       return;
     }
 
     if (chatMode === 'friends' && activeFriend) {
-      ws.current?.send(JSON.stringify({
-        type: 'direct_message',
+      const clientMsgId = randomId();
+      const queueItem = {
+        clientMsgId,
+        kind: 'direct_message',
         targetUserId: activeFriend.user_id,
-        text
-      }));
+        text,
+        createdAt: nowTs(),
+        expiresAt: nowTs() + OUTBOX_TTL_MS,
+        attempts: 0,
+        lastAttemptAt: 0,
+        payload: {
+          type: 'direct_message',
+          targetUserId: activeFriend.user_id,
+          text,
+          clientMsgId
+        }
+      };
+
+      setMessages(prev => [...prev, {
+        from: 'me',
+        text,
+        msgType: 'direct',
+        sendState: 'pending',
+        clientMsgId
+      }]);
+      enqueueOutboxItem(queueItem);
+      if (!isWsReady()) connectWsFnRef.current();
       return;
     }
 
@@ -673,7 +1093,7 @@ function App() {
   };
 
   const handleTyping = () => {
-    if (ws.current?.readyState !== WebSocket.OPEN) return;
+    if (!isWsReady()) return;
 
     const now = Date.now();
     if (now - lastTypingSentRef.current > 2000) {
@@ -695,7 +1115,7 @@ function App() {
 
   const handleReport = () => {
     const reason = prompt('Lutfen rapor sebebini belirtin (spam, hakaret, vb.):');
-    if (!reason || ws.current?.readyState !== WebSocket.OPEN) return;
+    if (!reason || !isWsReady()) return;
 
     if (chatMode === 'anon' && roomId) {
       ws.current.send(JSON.stringify({ type: 'report', roomId, reason }));
@@ -716,16 +1136,42 @@ function App() {
 
   const handleSendImage = (base64) => {
     if (chatMode !== 'friends' || !activeFriend?.user_id) return;
-
-    ws.current?.send(JSON.stringify({
-      type: 'direct_image_send',
+    const clientMsgId = randomId();
+    const queueItem = {
+      clientMsgId,
+      kind: 'direct_image_send',
       targetUserId: activeFriend.user_id,
-      imageData: base64
-    }));
+      text: 'Fotograf',
+      createdAt: nowTs(),
+      expiresAt: nowTs() + OUTBOX_TTL_MS,
+      attempts: 0,
+      lastAttemptAt: 0,
+      payload: {
+        type: 'direct_image_send',
+        targetUserId: activeFriend.user_id,
+        imageData: base64,
+        clientMsgId
+      }
+    };
+
+    setMessages(prev => [...prev, {
+      from: 'me',
+      text: 'Fotograf',
+      msgType: 'image',
+      sendState: 'pending',
+      clientMsgId
+    }]);
+    enqueueOutboxItem(queueItem);
+    if (!isWsReady()) connectWsFnRef.current();
   };
 
   const handleViewImage = (mediaId) => {
     if (!mediaId) return;
+    if (!isWsReady()) {
+      showToast('TalkX', 'Baglanti yok. Fotograf simdi acilamiyor.', 4500);
+      connectWsFnRef.current();
+      return;
+    }
 
     if (imageFetchTimeoutRef.current) {
       clearTimeout(imageFetchTimeoutRef.current);

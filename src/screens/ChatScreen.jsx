@@ -140,23 +140,31 @@ const ChatScreen = ({
             }}>
                 {messages.map((m, i) => (
                     <div key={i} className={m.from === 'me' ? 'chat-bubble-me animate-slide-up' : 'chat-bubble-peer animate-slide-up'}>
-                        {m.msgType === 'image' ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                {m.mediaExpired ? (
-                                    <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>Fotograf acildi</span>
-                                ) : (
-                                    m.from === 'me' ? (
-                                        <span style={{ fontStyle: 'italic', fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)' }}>Fotograf gonderildi</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {m.msgType === 'image' ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    {m.mediaExpired ? (
+                                        <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>Fotograf acildi</span>
                                     ) : (
-                                        <button className="btn-neon-sm" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={() => onViewImage && onViewImage(m.mediaId)}>
-                                            Fotografi Goruntule
-                                        </button>
-                                    )
-                                )}
-                            </div>
-                        ) : (
-                            m.text
-                        )}
+                                        m.from === 'me' ? (
+                                            <span style={{ fontStyle: 'italic', fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)' }}>Fotograf gonderildi</span>
+                                        ) : (
+                                            <button className="btn-neon-sm" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={() => onViewImage && onViewImage(m.mediaId)}>
+                                                Fotografi Goruntule
+                                            </button>
+                                        )
+                                    )}
+                                </div>
+                            ) : (
+                                m.text
+                            )}
+                            {m.from === 'me' && m.sendState === 'pending' && (
+                                <span style={{ fontSize: '0.72rem', opacity: 0.75 }}>Gonderiliyor...</span>
+                            )}
+                            {m.from === 'me' && m.sendState === 'failed' && (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--danger)' }}>Gonderilemedi</span>
+                            )}
+                        </div>
                     </div>
                 ))}
 
