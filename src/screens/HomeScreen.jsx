@@ -30,7 +30,10 @@ const HomeScreen = ({ onSelectMode, onlineCount, unreadCount = 0, onLogout }) =>
                 alignItems: 'center',
                 paddingTop: 10
             }}>
-                <h2 className="logo-text" style={{ fontSize: '1.5rem' }}>TALK X</h2>
+                <div className="brand-lockup brand-lockup-compact">
+                    <img src="/brand/talkx-icon-256.png" alt="TalkX icon" className="brand-lockup-icon" />
+                    <h2 className="brand-lockup-text" style={{ fontSize: '1.5rem' }}>TalkX</h2>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ width: 8, height: 8, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 5px var(--success)' }}></span>

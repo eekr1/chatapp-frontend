@@ -10,8 +10,12 @@ const SplashScreen = ({ onFinish }) => {
 
     return (
         <div className="screen-container center-flex" style={{ height: '100vh', gap: '20px' }}>
-            <div className="animate-pulse">
-                <h1 className="logo-text" style={{ fontSize: '3.5rem', marginBottom: '0' }}>TALK X</h1>
+            <div className="animate-pulse brand-hero-wrap">
+                <img
+                    src="/brand/talkx-logo-full-1024.png"
+                    alt="TalkX"
+                    className="brand-hero-logo"
+                />
             </div>
             <p style={{
                 color: 'var(--text-dim)',

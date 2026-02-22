@@ -83,6 +83,44 @@ h4 {
   text-transform: uppercase;
 }
 
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-lockup-compact {
+  gap: 10px;
+}
+
+.brand-lockup-icon {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.35));
+}
+
+.brand-lockup-text {
+  font-family: var(--font-logo);
+  color: var(--primary);
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.45);
+  letter-spacing: 1.2px;
+  text-transform: none;
+}
+
+.brand-hero-wrap {
+  width: min(64vw, 340px);
+  display: flex;
+  justify-content: center;
+}
+
+.brand-hero-logo {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 40px rgba(40, 130, 255, 0.28));
+}
+
 /* Utility Components */
 
 /* Glass Card */
