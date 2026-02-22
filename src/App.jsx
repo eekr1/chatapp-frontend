@@ -28,6 +28,8 @@ const getDeviceId = () => {
 const DEVICE_ID = getDeviceId();
 const IS_DEV = import.meta.env.DEV;
 const IS_NATIVE = isNativePlatform();
+const TOAST_DEFAULT_MS = 10000;
+const TOAST_EXIT_MS = 280;
 
 function App() {
   const [screen, setScreen] = useState('splash');
@@ -55,6 +57,7 @@ function App() {
   const typingTimeoutRef = useRef(null);
   const lastTypingSentRef = useRef(0);
   const toastTimersRef = useRef(new Map());
+  const noticesRef = useRef(notices);
   const pushTokenRef = useRef(null);
 
   const IMAGE_FETCH_TIMEOUT_MS = 12000;
@@ -75,33 +78,76 @@ function App() {
   useEffect(() => { activeFriendRef.current = activeFriend; }, [activeFriend]);
   useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
   useEffect(() => { screenRef.current = screen; }, [screen]);
+  useEffect(() => { noticesRef.current = notices; }, [notices]);
 
-  const showToast = useCallback((title, body, durationMs = 10000) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const safeDuration = Math.max(3000, Math.min(60000, Number(durationMs) || 10000));
-    setNotices(prev => [...prev, { id, title: title || 'TalkX', body: body || '' }]);
-
-    const timer = window.setTimeout(() => {
-      setNotices(prev => prev.filter(item => item.id !== id));
+  const clearToastTimers = useCallback((id) => {
+    const entry = toastTimersRef.current.get(id);
+    if (!entry) return;
+    if (typeof entry === 'number') {
+      clearTimeout(entry);
       toastTimersRef.current.delete(id);
+      return;
+    }
+    if (entry.hideTimer) clearTimeout(entry.hideTimer);
+    if (entry.removeTimer) clearTimeout(entry.removeTimer);
+    toastTimersRef.current.delete(id);
+  }, []);
+
+  const startToastExit = useCallback((id) => {
+    const existing = noticesRef.current.find((item) => item.id === id);
+    if (!existing || existing.closing) return;
+
+    setNotices((prev) => prev.map((item) => (item.id === id ? { ...item, closing: true } : item)));
+
+    const entry = toastTimersRef.current.get(id) || {};
+    if (entry.hideTimer) {
+      clearTimeout(entry.hideTimer);
+      entry.hideTimer = null;
+    }
+    if (entry.removeTimer) clearTimeout(entry.removeTimer);
+    entry.removeTimer = window.setTimeout(() => {
+      setNotices((prev) => prev.filter((item) => item.id !== id));
+      clearToastTimers(id);
+    }, TOAST_EXIT_MS);
+    toastTimersRef.current.set(id, entry);
+  }, [clearToastTimers]);
+
+  const showToast = useCallback((title, body, durationMs = TOAST_DEFAULT_MS) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const safeDuration = Math.max(3000, Math.min(60000, Number(durationMs) || TOAST_DEFAULT_MS));
+    setNotices((prev) => [
+      ...prev,
+      {
+        id,
+        title: title || 'TalkX',
+        body: body || '',
+        durationMs: safeDuration,
+        closing: false
+      }
+    ]);
+
+    const hideTimer = window.setTimeout(() => {
+      startToastExit(id);
     }, safeDuration);
 
-    toastTimersRef.current.set(id, timer);
-  }, []);
+    toastTimersRef.current.set(id, { hideTimer, removeTimer: null });
+  }, [startToastExit]);
 
   const dismissToast = useCallback((id) => {
-    const timer = toastTimersRef.current.get(id);
-    if (timer) {
-      clearTimeout(timer);
-      toastTimersRef.current.delete(id);
-    }
-    setNotices(prev => prev.filter(item => item.id !== id));
-  }, []);
+    startToastExit(id);
+  }, [startToastExit]);
 
   useEffect(() => {
     const timers = toastTimersRef.current;
     return () => {
-      timers.forEach((timer) => clearTimeout(timer));
+      timers.forEach((entry) => {
+        if (typeof entry === 'number') {
+          clearTimeout(entry);
+          return;
+        }
+        if (entry?.hideTimer) clearTimeout(entry.hideTimer);
+        if (entry?.removeTimer) clearTimeout(entry.removeTimer);
+      });
       timers.clear();
     };
   }, []);
@@ -642,10 +688,23 @@ function App() {
   const toastStack = useMemo(() => (
     <div className="admin-toast-stack">
       {notices.map((notice) => (
-        <div key={notice.id} className="admin-toast" role="status" aria-live="polite">
+        <div
+          key={notice.id}
+          className={`admin-toast${notice.closing ? ' is-closing' : ''}`}
+          role="status"
+          aria-live="polite"
+          style={{ '--toast-duration': `${notice.durationMs || TOAST_DEFAULT_MS}ms` }}
+        >
           <button className="admin-toast-close" onClick={() => dismissToast(notice.id)} aria-label="Close">x</button>
+          <div className="admin-toast-header">
+            <span className="admin-toast-tag">Bildirim</span>
+          </div>
           <div className="admin-toast-title">{notice.title}</div>
+          <div className="admin-toast-divider" />
           <div className="admin-toast-body">{notice.body}</div>
+          <div className="admin-toast-progress" aria-hidden="true">
+            <span className="admin-toast-progress-bar" />
+          </div>
         </div>
       ))}
     </div>
