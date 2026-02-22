@@ -1,4 +1,30 @@
 const getPlugins = () => window.Capacitor?.Plugins || {};
+const PUSH_CHANNELS = [
+    {
+        id: 'talkx_messages',
+        name: 'TalkX Messages',
+        description: 'Friend message notifications',
+        importance: 5,
+        sound: 'default',
+        visibility: 1
+    },
+    {
+        id: 'talkx_admin',
+        name: 'TalkX Announcements',
+        description: 'System and admin announcements',
+        importance: 4,
+        sound: 'default',
+        visibility: 1
+    },
+    {
+        id: 'talkx_default',
+        name: 'TalkX General',
+        description: 'Fallback notifications',
+        importance: 3,
+        sound: 'default',
+        visibility: 1
+    }
+];
 
 export const isNativePlatform = () => {
     if (typeof window === 'undefined') return false;
@@ -85,6 +111,19 @@ export const initNativePush = async ({ onToken, onPushReceived, onPushAction }) 
     await add('pushNotificationActionPerformed', (notification) => onPushAction && onPushAction(notification));
 
     try {
+        if (PushNotifications.listChannels && PushNotifications.createChannel) {
+            const existing = await PushNotifications.listChannels();
+            const existingIds = new Set((existing?.channels || []).map((c) => c.id));
+            for (const channel of PUSH_CHANNELS) {
+                if (existingIds.has(channel.id)) continue;
+                await PushNotifications.createChannel(channel);
+            }
+        }
+    } catch (e) {
+        console.warn('Push channel setup failed:', e?.message || e);
+    }
+
+    try {
         await PushNotifications.register();
     } catch (e) {
         console.warn('Push register failed:', e);
@@ -114,6 +153,7 @@ export const showLocalNotification = async ({ title, body, data }) => {
         if (perm.display !== 'granted') return false;
 
         const notificationId = Math.floor(Date.now() % 2147483000);
+        const channelId = data?.channelId || 'talkx_default';
         await LocalNotifications.schedule({
             notifications: [{
                 id: notificationId,
@@ -122,6 +162,7 @@ export const showLocalNotification = async ({ title, body, data }) => {
                 schedule: { at: new Date(Date.now() + 100) },
                 sound: undefined,
                 smallIcon: 'ic_launcher',
+                channelId,
                 extra: data || {}
             }]
         });

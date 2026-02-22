@@ -30,6 +30,9 @@ const IS_DEV = import.meta.env.DEV;
 const IS_NATIVE = isNativePlatform();
 const TOAST_DEFAULT_MS = 10000;
 const TOAST_EXIT_MS = 280;
+const DELIVERY_DEDUPE_TTL_MS = 5 * 60 * 1000;
+const DELIVERY_DEDUPE_MAX = 500;
+const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function App() {
   const [screen, setScreen] = useState('splash');
@@ -59,6 +62,7 @@ function App() {
   const toastTimersRef = useRef(new Map());
   const noticesRef = useRef(notices);
   const pushTokenRef = useRef(null);
+  const seenDeliveryRef = useRef(new Map());
 
   const IMAGE_FETCH_TIMEOUT_MS = 12000;
   const initialImageViewer = {
@@ -79,6 +83,26 @@ function App() {
   useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
   useEffect(() => { screenRef.current = screen; }, [screen]);
   useEffect(() => { noticesRef.current = notices; }, [notices]);
+
+  const shouldProcessDelivery = useCallback((deliveryId) => {
+    if (!deliveryId) return true;
+    const now = Date.now();
+    const map = seenDeliveryRef.current;
+
+    map.forEach((ts, id) => {
+      if (now - ts > DELIVERY_DEDUPE_TTL_MS) map.delete(id);
+    });
+
+    if (map.has(deliveryId)) return false;
+    map.set(deliveryId, now);
+
+    if (map.size > DELIVERY_DEDUPE_MAX) {
+      const overflow = map.size - DELIVERY_DEDUPE_MAX;
+      const oldest = [...map.entries()].sort((a, b) => a[1] - b[1]).slice(0, overflow);
+      oldest.forEach(([id]) => map.delete(id));
+    }
+    return true;
+  }, []);
 
   const clearToastTimers = useCallback((id) => {
     const entry = toastTimersRef.current.get(id);
@@ -208,17 +232,24 @@ function App() {
     if (!user || !tokenValue) return;
     if (pushTokenRef.current === tokenValue) return;
 
-    pushTokenRef.current = tokenValue;
-    try {
-      await pushApi.register({
-        token: tokenValue,
-        platform: 'android',
-        deviceId: DEVICE_ID
-      });
-      if (IS_DEV) console.log('Push token registered');
-    } catch (e) {
-      console.warn('Push token register failed:', e?.response?.data || e.message);
+    const retryMs = [0, 2000, 5000];
+    for (let i = 0; i < retryMs.length; i += 1) {
+      if (retryMs[i] > 0) await waitMs(retryMs[i]);
+      try {
+        await pushApi.register({
+          token: tokenValue,
+          platform: 'android',
+          deviceId: DEVICE_ID
+        });
+        pushTokenRef.current = tokenValue;
+        if (IS_DEV) console.log('Push token registered');
+        return;
+      } catch (e) {
+        const message = e?.response?.data || e?.message || e;
+        console.warn(`Push token register failed (attempt ${i + 1}/${retryMs.length}):`, message);
+      }
     }
+    pushTokenRef.current = null;
   }, [user]);
 
   const handlePushPayload = useCallback(async (payload = {}, fromPushEvent = false) => {
@@ -226,12 +257,19 @@ function App() {
     const title = payload.title || payload.notification?.title || data.title || 'TalkX';
     const body = payload.body || payload.notification?.body || data.body || '';
     const type = data.type || payload.type;
+    const deliveryId = data.deliveryId || payload.deliveryId || payload.notification?.data?.deliveryId;
+    if (!shouldProcessDelivery(deliveryId)) return;
+    const channelId = data.channelId || (type === 'admin_notice' ? 'talkx_admin' : 'talkx_messages');
 
     if (type === 'admin_notice') {
       const durationMs = Number(data.durationMs || 10000);
       showToast(title, body, durationMs);
       if (fromPushEvent) {
-        await showLocalNotification({ title, body, data });
+        await showLocalNotification({
+          title,
+          body,
+          data: { ...data, deliveryId, channelId }
+        });
       }
       return;
     }
@@ -249,7 +287,7 @@ function App() {
         await notifyIncoming({
           title,
           body,
-          data,
+          data: { ...data, deliveryId, channelId },
           durationMs: 10000,
           local: true
         });
@@ -258,9 +296,13 @@ function App() {
     }
 
     if (fromPushEvent) {
-      await showLocalNotification({ title, body, data });
+      await showLocalNotification({
+        title,
+        body,
+        data: { ...data, deliveryId, channelId }
+      });
     }
-  }, [notifyIncoming, showToast]);
+  }, [notifyIncoming, showToast, shouldProcessDelivery]);
 
   useEffect(() => {
     if (!user) return;
@@ -358,6 +400,8 @@ function App() {
             break;
           case 'direct_message': {
             const senderId = data.fromUserId;
+            const deliveryId = data.deliveryId || null;
+            if (!shouldProcessDelivery(deliveryId)) break;
             const currentActive = activeFriendRef.current;
             const currentMode = chatModeRef.current;
             const isActiveConversation =
@@ -385,7 +429,9 @@ function App() {
                 data: {
                   type: 'direct_message',
                   fromUserId: senderId,
-                  msgType: data.msgType || 'direct'
+                  msgType: data.msgType || 'direct',
+                  deliveryId,
+                  channelId: 'talkx_messages'
                 },
                 local: true
               });
@@ -440,6 +486,8 @@ function App() {
             loadFriends();
             break;
           case 'admin_notice': {
+            const deliveryId = data.deliveryId || null;
+            if (!shouldProcessDelivery(deliveryId)) break;
             const durationMs = Number(data.durationMs || 10000);
             showToast(data.title || 'Duyuru', data.body || '', durationMs);
             break;
@@ -456,7 +504,7 @@ function App() {
       setStatus('disconnected');
       ws.current = null;
     };
-  }, [user, loadFriends, notifyIncoming, showToast]);
+  }, [user, loadFriends, notifyIncoming, showToast, shouldProcessDelivery]);
 
   useEffect(() => {
     if (user) connect();
@@ -471,6 +519,7 @@ function App() {
       }
       pushTokenRef.current = null;
     }
+    seenDeliveryRef.current.clear();
 
     try { await auth.logout(); } catch (e) { console.error('Logout error:', e); }
 
