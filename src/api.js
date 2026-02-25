@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+let lastErrorCode = null;
+
 const isNative = typeof window !== 'undefined' && (
     (typeof window.Capacitor?.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
     Boolean(window.Capacitor?.isNative)
@@ -18,6 +20,32 @@ const api = axios.create({
     baseURL
 });
 
+const persistLastErrorCode = (code) => {
+    lastErrorCode = code || null;
+    if (typeof window !== 'undefined') {
+        try {
+            if (lastErrorCode) {
+                window.localStorage.setItem('talkx_last_error_code', lastErrorCode);
+            } else {
+                window.localStorage.removeItem('talkx_last_error_code');
+            }
+        } catch {
+            // Ignore storage failures.
+        }
+    }
+};
+
+const deriveErrorCode = (error) => {
+    const data = error?.response?.data || {};
+    if (typeof data.code === 'string' && data.code.trim()) return data.code.trim();
+    if (typeof data.errorCode === 'string' && data.errorCode.trim()) return data.errorCode.trim();
+
+    const status = Number(error?.response?.status);
+    if (Number.isInteger(status) && status > 0) return `HTTP_${status}`;
+    if (error?.code === 'ECONNABORTED') return 'API_TIMEOUT';
+    return 'API_NETWORK_ERROR';
+};
+
 // Auto-add token
 api.interceptors.request.use(config => {
     const token = localStorage.getItem('session_token');
@@ -31,6 +59,7 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
     response => response,
     error => {
+        persistLastErrorCode(deriveErrorCode(error));
         if (import.meta.env.DEV) {
             console.error(`API Error [${error.config?.method?.toUpperCase()}] ${error.config?.url}:`, error.response?.status, error.message);
         }
@@ -77,6 +106,24 @@ export const friends = {
 export const push = {
     register: (payload) => api.post('/api/push/register', payload),
     unregister: (payload) => api.post('/api/push/unregister', payload)
+};
+
+export const support = {
+    report: (payload) => api.post('/support/report', payload)
+};
+
+export const setLastErrorCode = (code) => {
+    persistLastErrorCode(typeof code === 'string' ? code.trim().slice(0, 120) : null);
+};
+
+export const getLastErrorCode = () => {
+    if (lastErrorCode) return lastErrorCode;
+    if (typeof window === 'undefined') return null;
+    try {
+        return window.localStorage.getItem('talkx_last_error_code') || null;
+    } catch {
+        return null;
+    }
 };
 
 export const getAvatar = (seed) => {

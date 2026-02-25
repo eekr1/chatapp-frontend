@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './index.css';
-import { auth, profile, friends, push as pushApi } from './api';
+import {
+  auth,
+  profile,
+  friends,
+  push as pushApi,
+  support as supportApi,
+  getLastErrorCode,
+  setLastErrorCode
+} from './api';
 import Auth from './components/Auth';
 
 import SplashScreen from './screens/SplashScreen';
@@ -29,6 +37,7 @@ const getDeviceId = () => {
 const DEVICE_ID = getDeviceId();
 const IS_DEV = import.meta.env.DEV;
 const IS_NATIVE = isNativePlatform();
+const APP_VERSION = String(import.meta.env.VITE_APP_VERSION || '').trim() || 'unknown';
 const TOAST_DEFAULT_MS = 10000;
 const TOAST_EXIT_MS = 280;
 const DELIVERY_DEDUPE_TTL_MS = 5 * 60 * 1000;
@@ -113,6 +122,46 @@ const resolveWsUrl = ({ isNative, isDev }) => {
   return `${protocol}//${host}`;
 };
 
+const resolvePlatform = (isNative) => {
+  const ua = typeof navigator !== 'undefined' ? String(navigator.userAgent || '').toLowerCase() : '';
+  if (isNative) {
+    if (ua.includes('android')) return 'android';
+    if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod')) return 'ios';
+    return 'native';
+  }
+  return 'web';
+};
+
+const resolveDeviceModel = () => {
+  const ua = typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '';
+  if (!ua) return 'unknown';
+
+  if (/Android/i.test(ua)) {
+    const match = ua.match(/Android\s[\d.]+;\s([^;)\]]+)/i);
+    if (match && match[1]) {
+      return match[1].replace(/\sBuild\/.*$/i, '').trim().slice(0, 120) || 'Android Device';
+    }
+    return 'Android Device';
+  }
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/iPad/i.test(ua)) return 'iPad';
+  if (/iPod/i.test(ua)) return 'iPod';
+  if (/Windows/i.test(ua)) return 'Windows Device';
+  if (/Macintosh/i.test(ua)) return 'Mac Device';
+  if (/Linux/i.test(ua)) return 'Linux Device';
+  return 'unknown';
+};
+
+const resolveNetworkType = () => {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const raw = String(connection?.type || connection?.effectiveType || '').toLowerCase();
+  if (!raw) return 'unknown';
+  if (raw.includes('wifi') || raw.includes('ethernet')) return 'wifi';
+  if (raw.includes('cell') || ['2g', '3g', '4g', '5g', 'slow-2g'].includes(raw)) return 'cellular';
+  return 'unknown';
+};
+
 function App() {
   const [screen, setScreen] = useState('splash');
 
@@ -135,6 +184,7 @@ function App() {
   const [chatMode, setChatMode] = useState('anon');
 
   const [notices, setNotices] = useState([]);
+  const [supportSubmitting, setSupportSubmitting] = useState(false);
 
   const ws = useRef(null);
   const reconnectTimerRef = useRef(null);
@@ -626,6 +676,7 @@ function App() {
     const wsUrl = resolveWsUrl({ isNative: IS_NATIVE, isDev: IS_DEV });
     if (!wsUrl) {
       setWsStatus('disconnected');
+      setLastErrorCode('WS_CONFIG_MISSING');
       if (!wsConfigWarnedRef.current) {
         wsConfigWarnedRef.current = true;
         console.warn('WebSocket URL is not configured. Set VITE_WS_URL or VITE_API_URL.');
@@ -692,6 +743,7 @@ function App() {
             handleDirectMessageAck(data);
             break;
           case 'error':
+            if (data.code) setLastErrorCode(String(data.code).slice(0, 120));
             if (data.clientMsgId) {
               dropOutboxItem(data.clientMsgId);
               setMessageSendState(data.clientMsgId, { sendState: 'failed', errorCode: data.code || 'SERVER_ERROR' });
@@ -824,6 +876,7 @@ function App() {
 
     socket.onerror = () => {
       if (ws.current !== socket) return;
+      setLastErrorCode('WS_ERROR');
       setWsStatus('reconnecting');
     };
 
@@ -1159,6 +1212,39 @@ function App() {
     alert('Raporunuz iletildi.');
   };
 
+  const handleSupportReport = async ({ subject, description, email }) => {
+    const payload = {
+      subject: String(subject || '').trim().toLowerCase(),
+      description: String(description || '').trim(),
+      email: email ? String(email).trim() : null,
+      metadata: {
+        appVersion: APP_VERSION,
+        platform: resolvePlatform(IS_NATIVE),
+        deviceModel: resolveDeviceModel(),
+        timestamp: new Date().toISOString(),
+        networkType: resolveNetworkType(),
+        lastErrorCode: getLastErrorCode() || null
+      }
+    };
+
+    setSupportSubmitting(true);
+    try {
+      const response = await supportApi.report(payload);
+      if (!response?.data?.delivered) {
+        showToast('TalkX', 'Bildirimin alindi. Ekip en kisa surede inceleyecek.', 6500);
+      } else {
+        showToast('TalkX', 'Sorun bildirimi alindi. Tesekkurler.', 6500);
+      }
+      return { ok: true };
+    } catch (error) {
+      const message = error?.response?.data?.error || 'Sorun bildirimi gonderilemedi.';
+      showToast('TalkX', message, 6500);
+      return { ok: false, error: message };
+    } finally {
+      setSupportSubmitting(false);
+    }
+  };
+
   const closeImageViewer = () => {
     if (imageFetchTimeoutRef.current) {
       clearTimeout(imageFetchTimeoutRef.current);
@@ -1275,6 +1361,8 @@ function App() {
         onlineCount={onlineCount}
         unreadCount={totalUnread + (friendRequests.length || 0)}
         onLogout={handleLogout}
+        onSupportSubmit={handleSupportReport}
+        supportSubmitting={supportSubmitting}
         onSelectMode={(mode) => {
           if (mode === 'anon') handleStartAnon();
           else if (mode === 'friends') {
