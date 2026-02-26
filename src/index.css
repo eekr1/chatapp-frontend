@@ -643,6 +643,35 @@ h4 {
   color: rgba(198, 211, 236, 0.72);
 }
 
+.support-media-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.support-media-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(118, 134, 172, 0.34);
+  background: rgba(21, 26, 43, 0.5);
+  font-size: 0.77rem;
+  color: rgba(221, 231, 247, 0.9);
+}
+
+.support-media-item button {
+  border: 1px solid rgba(255, 145, 174, 0.4);
+  background: rgba(52, 16, 31, 0.9);
+  color: #ffd4e2;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
 .support-auto-meta {
   border: 1px solid rgba(120, 140, 188, 0.26);
   border-radius: 11px;

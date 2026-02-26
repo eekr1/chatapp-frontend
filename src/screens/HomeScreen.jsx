@@ -7,6 +7,9 @@ const SUPPORT_SUBJECTS = [
     { value: 'photo', label: 'Foto' },
     { value: 'other', label: 'Diger' }
 ];
+const MAX_MEDIA_FILES = 3;
+const MAX_MEDIA_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_MEDIA_TOTAL_BYTES = 16 * 1024 * 1024;
 
 /* Simple icons as SVGs to avoid extra dependencies */
 const MaskIcon = () => (
@@ -40,12 +43,14 @@ const HomeScreen = ({
     const [supportSubject, setSupportSubject] = useState('connection');
     const [supportDescription, setSupportDescription] = useState('');
     const [supportEmail, setSupportEmail] = useState('');
+    const [supportMediaFiles, setSupportMediaFiles] = useState([]);
     const [supportError, setSupportError] = useState('');
 
     const resetSupportForm = () => {
         setSupportSubject('connection');
         setSupportDescription('');
         setSupportEmail('');
+        setSupportMediaFiles([]);
         setSupportError('');
     };
 
@@ -58,6 +63,43 @@ const HomeScreen = ({
         if (supportSubmitting) return;
         setSupportOpen(false);
         setSupportError('');
+    };
+
+    const handleMediaSelection = (event) => {
+        const selected = Array.from(event.target.files || []);
+        event.target.value = '';
+        if (!selected.length) return;
+
+        const merged = [...supportMediaFiles, ...selected].slice(0, MAX_MEDIA_FILES);
+        if (supportMediaFiles.length + selected.length > MAX_MEDIA_FILES) {
+            setSupportError(`En fazla ${MAX_MEDIA_FILES} medya dosyasi ekleyebilirsiniz.`);
+            return;
+        }
+
+        let totalBytes = 0;
+        for (const file of merged) {
+            totalBytes += Number(file.size) || 0;
+            if ((Number(file.size) || 0) > MAX_MEDIA_FILE_BYTES) {
+                setSupportError(`Tek dosya boyutu en fazla ${Math.round(MAX_MEDIA_FILE_BYTES / (1024 * 1024))} MB olabilir.`);
+                return;
+            }
+            if (file.type && !/^(image|video)\//i.test(file.type)) {
+                setSupportError('Sadece foto veya video yukleyebilirsiniz.');
+                return;
+            }
+        }
+
+        if (totalBytes > MAX_MEDIA_TOTAL_BYTES) {
+            setSupportError(`Toplam medya boyutu en fazla ${Math.round(MAX_MEDIA_TOTAL_BYTES / (1024 * 1024))} MB olabilir.`);
+            return;
+        }
+
+        setSupportError('');
+        setSupportMediaFiles(merged);
+    };
+
+    const removeMediaFile = (index) => {
+        setSupportMediaFiles((prev) => prev.filter((_, i) => i !== index));
     };
 
     const handleSupportSubmit = async (event) => {
@@ -84,7 +126,8 @@ const HomeScreen = ({
         const result = await onSupportSubmit({
             subject: supportSubject,
             description,
-            email: email || null
+            email: email || null,
+            mediaFiles: supportMediaFiles
         });
 
         if (result?.ok) {
@@ -251,6 +294,27 @@ const HomeScreen = ({
                                 maxLength={254}
                                 disabled={supportSubmitting}
                             />
+
+                            <label htmlFor="support-media">Medya (opsiyonel, foto/video)</label>
+                            <input
+                                id="support-media"
+                                type="file"
+                                accept="image/*,video/*"
+                                multiple
+                                className="input-glass"
+                                onChange={handleMediaSelection}
+                                disabled={supportSubmitting}
+                            />
+                            {supportMediaFiles.length > 0 && (
+                                <div className="support-media-list">
+                                    {supportMediaFiles.map((file, index) => (
+                                        <div key={`${file.name}-${index}`} className="support-media-item">
+                                            <span>{file.name} ({(Number(file.size || 0) / 1024 / 1024).toFixed(2)} MB)</span>
+                                            <button type="button" onClick={() => removeMediaFile(index)} disabled={supportSubmitting}>Kaldir</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
 
                             <div className="support-auto-meta">
                                 Otomatik eklenecek: app version, platform, cihaz modeli, saat, network tipi, son hata kodu.

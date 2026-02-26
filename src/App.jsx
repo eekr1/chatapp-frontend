@@ -37,7 +37,7 @@ const getDeviceId = () => {
 const DEVICE_ID = getDeviceId();
 const IS_DEV = import.meta.env.DEV;
 const IS_NATIVE = isNativePlatform();
-const APP_VERSION = String(import.meta.env.VITE_APP_VERSION || '').trim() || 'unknown';
+const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'unknown';
 const TOAST_DEFAULT_MS = 10000;
 const TOAST_EXIT_MS = 280;
 const DELIVERY_DEDUPE_TTL_MS = 5 * 60 * 1000;
@@ -1212,24 +1212,27 @@ function App() {
     alert('Raporunuz iletildi.');
   };
 
-  const handleSupportReport = async ({ subject, description, email }) => {
-    const payload = {
-      subject: String(subject || '').trim().toLowerCase(),
-      description: String(description || '').trim(),
-      email: email ? String(email).trim() : null,
-      metadata: {
-        appVersion: APP_VERSION,
-        platform: resolvePlatform(IS_NATIVE),
-        deviceModel: resolveDeviceModel(),
-        timestamp: new Date().toISOString(),
-        networkType: resolveNetworkType(),
-        lastErrorCode: getLastErrorCode() || null
-      }
+  const handleSupportReport = async ({ subject, description, email, mediaFiles = [] }) => {
+    const metadata = {
+      appVersion: APP_VERSION,
+      platform: resolvePlatform(IS_NATIVE),
+      deviceModel: resolveDeviceModel(),
+      timestamp: new Date().toISOString(),
+      networkType: resolveNetworkType(),
+      lastErrorCode: getLastErrorCode() || null
     };
+    const formData = new FormData();
+    formData.append('subject', String(subject || '').trim().toLowerCase());
+    formData.append('description', String(description || '').trim());
+    if (email) formData.append('email', String(email).trim());
+    formData.append('metadata', JSON.stringify(metadata));
+    (mediaFiles || []).forEach((file) => {
+      if (file instanceof File) formData.append('media', file, file.name || 'media');
+    });
 
     setSupportSubmitting(true);
     try {
-      const response = await supportApi.report(payload);
+      const response = await supportApi.report(formData);
       if (!response?.data?.delivered) {
         showToast('TalkX', 'Bildirimin alindi. Ekip en kisa surede inceleyecek.', 6500);
       } else {
