@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import GlassCard from '../components/GlassCard';
 
 const MatchScreen = ({ onCancel, onMatchMock }) => {
-    const [progress, setProgress] = useState(0);
     const [questionIndex, setQuestionIndex] = useState(0);
 
     const questions = [
@@ -12,17 +11,6 @@ const MatchScreen = ({ onCancel, onMatchMock }) => {
         "Kimse bilmesin dediğin bir şey var mı?",
         "Hangi film karakteri seni anlatıyor?"
     ];
-
-    // Progress Animation
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setProgress(old => {
-                if (old >= 100) return 0;
-                return old + 1; // 100 * 50ms = 5 sec roughly per cycle
-            });
-        }, 50);
-        return () => clearInterval(interval);
-    }, []);
 
     // Question Rotation
     useEffect(() => {
@@ -57,7 +45,18 @@ const MatchScreen = ({ onCancel, onMatchMock }) => {
 
                 {/* Circular Spinner overlay */}
                 <svg style={{ position: 'absolute', top: -10, left: -10, width: 220, height: 220, transform: 'rotate(-90deg)' }}>
-                    <circle cx="110" cy="110" r="105" fill="none" stroke="var(--primary)" strokeWidth="2" strokeDasharray="660" strokeDashoffset={660 - (660 * progress) / 100} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.1s linear' }} />
+                    <circle
+                        cx="110"
+                        cy="110"
+                        r="105"
+                        fill="none"
+                        stroke="var(--primary)"
+                        strokeWidth="2"
+                        strokeDasharray="660"
+                        strokeDashoffset="660"
+                        strokeLinecap="round"
+                        style={{ animation: 'scanProgress 5s linear infinite' }}
+                    />
                 </svg>
             </div>
 
@@ -81,7 +80,10 @@ const MatchScreen = ({ onCancel, onMatchMock }) => {
                 </button>
             </div>
 
-            <style>{`@keyframes ping { 75%, 100% { transform: scale(1.5); opacity: 0; } }`}</style>
+            <style>{`
+                @keyframes ping { 75%, 100% { transform: scale(1.5); opacity: 0; } }
+                @keyframes scanProgress { from { stroke-dashoffset: 660; } to { stroke-dashoffset: 0; } }
+            `}</style>
 
         </div>
     );

@@ -42,8 +42,8 @@ const TOAST_DEFAULT_MS = 10000;
 const TOAST_EXIT_MS = 280;
 const DELIVERY_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const DELIVERY_DEDUPE_MAX = 500;
-const WS_RETRY_STEPS_MS = [1000, 2000, 5000, 10000];
-const WS_RETRY_MAX_MS = 10000;
+const WS_RETRY_STEPS_MS = [1000, 2000, 5000, 10000, 20000, 30000];
+const WS_RETRY_MAX_MS = 30000;
 const OUTBOX_STORAGE_KEY = 'talkx_pending_outbox_v1';
 const OUTBOX_MAX_ITEMS = 100;
 const OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;
@@ -94,6 +94,13 @@ const persistOutbox = (items = []) => {
 const withJitter = (baseMs) => {
   const jitter = 1 + ((Math.random() * 0.4) - 0.2);
   return Math.max(250, Math.round(baseMs * jitter));
+};
+
+const isAppForeground = () => {
+  if (typeof document === 'undefined') return true;
+  if (document.visibilityState && document.visibilityState !== 'visible') return false;
+  if (typeof document.hasFocus === 'function' && !document.hasFocus()) return false;
+  return true;
 };
 
 const resolveWsUrl = ({ isNative, isDev }) => {
@@ -509,13 +516,14 @@ function App() {
     const type = data.type || payload.type;
     const deliveryId = data.deliveryId || payload.deliveryId || payload.notification?.data?.deliveryId;
     if (!shouldProcessDelivery(deliveryId)) return;
+    const allowLocalNotification = fromPushEvent && !isAppForeground();
     const channelId = data.channelId || (type === 'admin_notice' ? CHANNEL_IDS.admin : CHANNEL_IDS.messages);
 
     if (type === 'admin_notice') {
       const normalized = normalizeAdminNotice({ title, body, data });
       const durationMs = Number(data.durationMs || 10000);
       showToast(normalized.title, normalized.body, durationMs);
-      if (fromPushEvent) {
+      if (allowLocalNotification) {
         await showLocalNotification({
           title: normalized.title,
           body: normalized.body,
@@ -540,13 +548,13 @@ function App() {
           body,
           data: { ...data, deliveryId, channelId },
           durationMs: 10000,
-          local: fromPushEvent
+          local: allowLocalNotification
         });
       }
       return;
     }
 
-    if (fromPushEvent) {
+    if (allowLocalNotification) {
       await showLocalNotification({
         title,
         body,
@@ -658,6 +666,10 @@ function App() {
 
   const scheduleReconnect = useCallback(() => {
     if (!shouldReconnectRef.current || intentionalCloseRef.current || !user) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setWsStatus('offline');
+      return;
+    }
     if (reconnectTimerRef.current) return;
     const idx = Math.min(reconnectAttemptRef.current, WS_RETRY_STEPS_MS.length - 1);
     const delay = withJitter(Math.min(WS_RETRY_STEPS_MS[idx], WS_RETRY_MAX_MS));
@@ -914,6 +926,21 @@ function App() {
         ws.current = null;
       }
     };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const onOnline = () => {
+      if (!shouldReconnectRef.current || intentionalCloseRef.current) return;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      connectWsFnRef.current();
+    };
+
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
   }, [user]);
 
   useEffect(() => {

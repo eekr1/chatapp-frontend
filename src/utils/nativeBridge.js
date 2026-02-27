@@ -1,10 +1,17 @@
 const getPlugins = () => window.Capacitor?.Plugins || {};
 export const CHANNEL_IDS = {
-    messages: 'talkx_messages_v2',
-    admin: 'talkx_admin_v2',
-    default: 'talkx_default_v2'
+    messages: 'talkx_messages_v3',
+    admin: 'talkx_admin_v3',
+    default: 'talkx_default_v3'
 };
-const LEGACY_CHANNEL_IDS = ['talkx_messages', 'talkx_admin', 'talkx_default'];
+const LEGACY_CHANNEL_IDS = [
+    'talkx_messages',
+    'talkx_admin',
+    'talkx_default',
+    'talkx_messages_v2',
+    'talkx_admin_v2',
+    'talkx_default_v2'
+];
 const PUSH_CHANNELS = [
     {
         id: CHANNEL_IDS.messages,
