@@ -169,6 +169,28 @@ const resolveNetworkType = () => {
   return 'unknown';
 };
 
+const SUPPORT_SUBJECTS = new Set(['connection', 'message', 'photo', 'other']);
+const SUPPORT_SUBJECT_ALIAS = new Map([
+  ['baglanti', 'connection'],
+  ['bağlantı', 'connection'],
+  ['mesaj', 'message'],
+  ['foto', 'photo'],
+  ['diger', 'other'],
+  ['diğer', 'other']
+]);
+
+const normalizeSupportSubject = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (SUPPORT_SUBJECTS.has(normalized)) return normalized;
+  if (SUPPORT_SUBJECT_ALIAS.has(normalized)) return SUPPORT_SUBJECT_ALIAS.get(normalized);
+
+  const ascii = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (SUPPORT_SUBJECTS.has(ascii)) return ascii;
+  if (SUPPORT_SUBJECT_ALIAS.has(ascii)) return SUPPORT_SUBJECT_ALIAS.get(ascii);
+  return null;
+};
+
 function App() {
   const [screen, setScreen] = useState('splash');
 
@@ -1240,6 +1262,19 @@ function App() {
   };
 
   const handleSupportReport = async ({ subject, description, email, mediaFiles = [] }) => {
+    const normalizedSubject = normalizeSupportSubject(subject);
+    if (!normalizedSubject) {
+      const message = 'Gecersiz konu secimi.';
+      showToast('TalkX', message, 6500);
+      return { ok: false, error: message };
+    }
+
+    const descriptionText = String(description || '').trim();
+    const emailText = String(email || '').trim();
+    const validMediaFiles = Array.isArray(mediaFiles)
+      ? mediaFiles.filter((file) => file instanceof File)
+      : [];
+
     const metadata = {
       appVersion: APP_VERSION,
       platform: resolvePlatform(IS_NATIVE),
@@ -1248,18 +1283,29 @@ function App() {
       networkType: resolveNetworkType(),
       lastErrorCode: getLastErrorCode() || null
     };
-    const formData = new FormData();
-    formData.append('subject', String(subject || '').trim().toLowerCase());
-    formData.append('description', String(description || '').trim());
-    if (email) formData.append('email', String(email).trim());
-    formData.append('metadata', JSON.stringify(metadata));
-    (mediaFiles || []).forEach((file) => {
-      if (file instanceof File) formData.append('media', file, file.name || 'media');
-    });
+    const hasMedia = validMediaFiles.length > 0;
+    const payload = hasMedia
+      ? (() => {
+        const formData = new FormData();
+        formData.append('subject', normalizedSubject);
+        formData.append('description', descriptionText);
+        if (emailText) formData.append('email', emailText);
+        formData.append('metadata', JSON.stringify(metadata));
+        validMediaFiles.forEach((file) => {
+          formData.append('media', file, file.name || 'media');
+        });
+        return formData;
+      })()
+      : {
+        subject: normalizedSubject,
+        description: descriptionText,
+        email: emailText || null,
+        metadata
+      };
 
     setSupportSubmitting(true);
     try {
-      const response = await supportApi.report(formData);
+      const response = await supportApi.report(payload);
       if (!response?.data?.delivered) {
         showToast('TalkX', 'Bildirimin alindi. Ekip en kisa surede inceleyecek.', 6500);
       } else {
