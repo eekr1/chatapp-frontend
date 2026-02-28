@@ -109,7 +109,14 @@ export const push = {
 };
 
 export const support = {
-    report: (payload) => api.post('/support/report', payload)
+    report: (payload) => {
+        const isFormDataPayload = typeof FormData !== 'undefined' && payload instanceof FormData;
+        if (isFormDataPayload) {
+            // Let the browser set multipart boundary automatically.
+            return api.post('/support/report', payload);
+        }
+        return api.post('/support/report', payload);
+    }
 };
 
 export const setLastErrorCode = (code) => {
