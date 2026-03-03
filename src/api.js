@@ -119,6 +119,10 @@ export const support = {
     }
 };
 
+export const legal = {
+    getPublic: () => api.get('/api/legal')
+};
+
 export const setLastErrorCode = (code) => {
     persistLastErrorCode(typeof code === 'string' ? code.trim().slice(0, 120) : null);
 };

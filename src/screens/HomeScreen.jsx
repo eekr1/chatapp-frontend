@@ -10,6 +10,13 @@ const SUPPORT_SUBJECTS = [
 const MAX_MEDIA_FILES = 3;
 const MAX_MEDIA_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_MEDIA_TOTAL_BYTES = 16 * 1024 * 1024;
+const DEFAULT_LEGAL_FOOTER = Object.freeze({
+    tagline: 'Kimligini gizle, ozgurce konus.',
+    privacyLabel: 'Gizlilik Politikasi',
+    privacyUrl: '/privacy-policy',
+    termsLabel: 'Kullanim Sartlari',
+    termsUrl: '/terms-of-use'
+});
 
 /* Simple icons as SVGs to avoid extra dependencies */
 const MaskIcon = () => (
@@ -30,6 +37,7 @@ const FriendsIcon = () => (
 );
 
 const isEmailValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+const isExternalUrl = (value) => /^https:\/\//i.test(String(value || '').trim());
 
 const HomeScreen = ({
     onSelectMode,
@@ -37,8 +45,10 @@ const HomeScreen = ({
     unreadCount = 0,
     onLogout,
     onSupportSubmit,
-    supportSubmitting = false
+    supportSubmitting = false,
+    legalFooter = DEFAULT_LEGAL_FOOTER
 }) => {
+    const footer = { ...DEFAULT_LEGAL_FOOTER, ...(legalFooter || {}) };
     const [supportOpen, setSupportOpen] = useState(false);
     const [supportSubject, setSupportSubject] = useState('connection');
     const [supportDescription, setSupportDescription] = useState('');
@@ -235,8 +245,25 @@ const HomeScreen = ({
                 </div>
             </main>
 
-            <footer className="center-flex" style={{ paddingBottom: 20 }}>
-                <p style={{ color: 'var(--text-dim)', fontSize: '0.8rem', opacity: 0.6 }}>Kimligini gizle, ozgurce konus.</p>
+            <footer className="center-flex home-footer">
+                <p className="home-tagline">{footer.tagline}</p>
+                <nav className="home-legal-links" aria-label="Yasal linkler">
+                    <a
+                        href={footer.privacyUrl}
+                        className="home-legal-link"
+                        {...(isExternalUrl(footer.privacyUrl) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                    >
+                        {footer.privacyLabel}
+                    </a>
+                    <span className="home-legal-separator">•</span>
+                    <a
+                        href={footer.termsUrl}
+                        className="home-legal-link"
+                        {...(isExternalUrl(footer.termsUrl) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                    >
+                        {footer.termsLabel}
+                    </a>
+                </nav>
             </footer>
 
             <button

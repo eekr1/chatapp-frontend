@@ -6,6 +6,7 @@ import {
   friends,
   push as pushApi,
   support as supportApi,
+  legal as legalApi,
   getLastErrorCode,
   setLastErrorCode
 } from './api';
@@ -16,6 +17,7 @@ import HomeScreen from './screens/HomeScreen';
 import MatchScreen from './screens/MatchScreen';
 import ChatScreen from './screens/ChatScreen';
 import FriendsScreen from './screens/FriendsScreen';
+import LegalScreen from './screens/LegalScreen';
 import {
   isNativePlatform,
   setupViewportInsets,
@@ -191,7 +193,108 @@ const normalizeSupportSubject = (value) => {
   return null;
 };
 
+const LEGAL_ROUTE_KIND = Object.freeze({
+  '/privacy-policy': 'privacy',
+  '/terms-of-use': 'terms'
+});
+
+const DEFAULT_LEGAL_CONTENT = Object.freeze({
+  footer: Object.freeze({
+    tagline: 'Kimligini gizle, ozgurce konus.',
+    privacyLabel: 'Gizlilik Politikasi',
+    privacyUrl: '/privacy-policy',
+    termsLabel: 'Kullanim Sartlari',
+    termsUrl: '/terms-of-use'
+  }),
+  documents: Object.freeze({
+    privacy: Object.freeze({
+      tr: Object.freeze({
+        title: 'Gizlilik Politikasi',
+        content: 'Bu metin admin panelinden guncellenebilir.'
+      }),
+      en: Object.freeze({
+        title: 'Privacy Policy',
+        content: 'This text can be updated from the admin panel.'
+      })
+    }),
+    terms: Object.freeze({
+      tr: Object.freeze({
+        title: 'Kullanim Sartlari',
+        content: 'Bu metin admin panelinden guncellenebilir.'
+      }),
+      en: Object.freeze({
+        title: 'Terms of Use',
+        content: 'This text can be updated from the admin panel.'
+      })
+    })
+  })
+});
+
+const cloneLegalContent = () => JSON.parse(JSON.stringify(DEFAULT_LEGAL_CONTENT));
+
+const normalizePathname = (value = '/') => {
+  const raw = String(value || '/').trim() || '/';
+  if (raw === '/') return '/';
+  return raw.replace(/\/+$/, '');
+};
+
+const resolveLegalKindFromPath = () => {
+  if (typeof window === 'undefined') return null;
+  const normalizedPath = normalizePathname(window.location.pathname || '/');
+  return LEGAL_ROUTE_KIND[normalizedPath] || null;
+};
+
+const normalizeLegalLangDoc = (value, fallback) => {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    title: typeof source.title === 'string' && source.title.trim() ? source.title.trim() : fallback.title,
+    content: typeof source.content === 'string' && source.content.trim()
+      ? source.content.replace(/\r\n/g, '\n').trim()
+      : fallback.content
+  };
+};
+
+const normalizeLegalContent = (value) => {
+  const defaults = cloneLegalContent();
+  const source = value && typeof value === 'object' ? value : {};
+  const footerSource = source.footer && typeof source.footer === 'object' ? source.footer : {};
+  const docsSource = source.documents && typeof source.documents === 'object' ? source.documents : {};
+
+  const normalized = {
+    footer: {
+      tagline: typeof footerSource.tagline === 'string' && footerSource.tagline.trim()
+        ? footerSource.tagline.trim()
+        : defaults.footer.tagline,
+      privacyLabel: typeof footerSource.privacyLabel === 'string' && footerSource.privacyLabel.trim()
+        ? footerSource.privacyLabel.trim()
+        : defaults.footer.privacyLabel,
+      privacyUrl: typeof footerSource.privacyUrl === 'string' && footerSource.privacyUrl.trim()
+        ? footerSource.privacyUrl.trim()
+        : defaults.footer.privacyUrl,
+      termsLabel: typeof footerSource.termsLabel === 'string' && footerSource.termsLabel.trim()
+        ? footerSource.termsLabel.trim()
+        : defaults.footer.termsLabel,
+      termsUrl: typeof footerSource.termsUrl === 'string' && footerSource.termsUrl.trim()
+        ? footerSource.termsUrl.trim()
+        : defaults.footer.termsUrl
+    },
+    documents: {
+      privacy: {
+        tr: normalizeLegalLangDoc(docsSource?.privacy?.tr, defaults.documents.privacy.tr),
+        en: normalizeLegalLangDoc(docsSource?.privacy?.en, defaults.documents.privacy.en)
+      },
+      terms: {
+        tr: normalizeLegalLangDoc(docsSource?.terms?.tr, defaults.documents.terms.tr),
+        en: normalizeLegalLangDoc(docsSource?.terms?.en, defaults.documents.terms.en)
+      }
+    }
+  };
+
+  return normalized;
+};
+
 function App() {
+  const legalKind = resolveLegalKindFromPath();
   const [screen, setScreen] = useState('splash');
 
   const [user, setUser] = useState(null);
@@ -214,6 +317,8 @@ function App() {
 
   const [notices, setNotices] = useState([]);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [legalContent, setLegalContent] = useState(() => cloneLegalContent());
+  const [legalLoaded, setLegalLoaded] = useState(false);
 
   const ws = useRef(null);
   const reconnectTimerRef = useRef(null);
@@ -257,6 +362,26 @@ function App() {
   useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
   useEffect(() => { screenRef.current = screen; }, [screen]);
   useEffect(() => { noticesRef.current = notices; }, [notices]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    (async () => {
+      try {
+        const response = await legalApi.getPublic();
+        if (canceled) return;
+        setLegalContent(normalizeLegalContent(response?.data));
+      } catch (e) {
+        if (IS_DEV) console.warn('Legal content load failed:', e?.message || e);
+      } finally {
+        if (!canceled) setLegalLoaded(true);
+      }
+    })();
+
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   const shouldProcessDelivery = useCallback((deliveryId) => {
     if (!deliveryId) return true;
@@ -1424,6 +1549,16 @@ function App() {
     </>
   );
 
+  if (legalKind) {
+    return withToasts(
+      <LegalScreen
+        kind={legalKind}
+        legalContent={legalContent}
+        loading={!legalLoaded}
+      />
+    );
+  }
+
   if (!user) return withToasts(<Auth onLogin={setUser} />);
 
   if (screen === 'splash') {
@@ -1439,6 +1574,7 @@ function App() {
         onLogout={handleLogout}
         onSupportSubmit={handleSupportReport}
         supportSubmitting={supportSubmitting}
+        legalFooter={legalContent.footer}
         onSelectMode={(mode) => {
           if (mode === 'anon') handleStartAnon();
           else if (mode === 'friends') {
