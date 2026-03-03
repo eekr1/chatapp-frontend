@@ -1,68 +1,119 @@
 ﻿import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
 
+const BackIcon = () => (
+    <svg className="friends-back-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14.5 5L8 11.5L14.5 18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+);
+
+const InboxIcon = () => (
+    <svg className="friends-inline-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Z" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M4 12h5l1.6 2h2.8L15 12h5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+);
+
+const TrashIcon = () => (
+    <svg className="friends-inline-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 7h14" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+        <path d="M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7" fill="none" stroke="currentColor" strokeWidth="1.9" />
+        <path d="M7.6 7l.7 10a2 2 0 0 0 2 1.8h3.4a2 2 0 0 0 2-1.8l.7-10" fill="none" stroke="currentColor" strokeWidth="1.9" />
+    </svg>
+);
+
+const CheckIcon = () => (
+    <svg className="friends-inline-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5.5 12.5L10.2 17L18.5 8.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+);
+
+const CloseIcon = () => (
+    <svg className="friends-inline-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+);
+
+const getAvatarInitial = (name) => {
+    const normalized = String(name || '').trim();
+    if (!normalized) return '?';
+    const chars = Array.from(normalized);
+    return (chars[0] || '?').toLocaleUpperCase('tr-TR');
+};
+
 const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject, onDelete, unreadCounts = {} }) => {
-    const [tab, setTab] = useState('list'); // 'list' or 'requests'
+    const [tab, setTab] = useState('list');
 
     return (
         <div className="screen-container animate-fade-in" style={{ padding: 20 }}>
-            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
                 <button onClick={onBack} className="friends-back-btn" aria-label="Geri">
-                    <span aria-hidden="true">&larr;</span>
+                    <BackIcon />
                 </button>
-                <h2 style={{ fontSize: '1.5rem', color: 'var(--accent)' }}>ARKADAÅLAR</h2>
+                <h2 style={{ fontSize: '1.5rem', color: 'var(--accent)' }}>ARKADAŞLAR</h2>
             </div>
 
-            {/* Tabs */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
                 <button
                     className={tab === 'list' ? 'btn-solid-purple' : 'btn-neon'}
                     style={tab !== 'list' ? { borderColor: 'var(--text-dim)', color: 'var(--text-dim)' } : {}}
                     onClick={() => setTab('list')}
                 >
-                    ArkadaÅŸlarÄ±m
+                    Arkadaşlarım
                 </button>
                 <button
                     className={tab === 'requests' ? 'btn-solid-purple' : 'btn-neon'}
                     style={tab !== 'requests' ? { borderColor: 'var(--text-dim)', color: 'var(--text-dim)' } : {}}
                     onClick={() => setTab('requests')}
                 >
-                    Ä°stekler {requests.length > 0 && <span style={{ background: 'var(--danger)', color: 'white', padding: '2px 6px', borderRadius: '50%', fontSize: '0.8rem', marginLeft: 5 }}>{requests.length}</span>}
+                    İstekler {requests.length > 0 && <span className="friends-tab-badge">{requests.length}</span>}
                 </button>
             </div>
 
-            {/* Content */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 15, flex: 1, overflowY: 'auto' }}>
-
                 {tab === 'list' && (
                     friends.length === 0 ? (
                         <div className="center-flex" style={{ flex: 1, color: 'var(--text-dim)', opacity: 0.6 }}>
-                            <p>HenÃ¼z arkadaÅŸÄ±n yok.</p>
+                            <p>Henüz arkadaşın yok.</p>
                             <p style={{ fontSize: '0.9rem' }}>Anonim sohbetlerden ekleyebilirsin.</p>
                         </div>
                     ) : (
-                        friends.map(f => {
+                        friends.map((f) => {
                             const count = unreadCounts[f.user_id] || 0;
+                            const name = f.display_name || f.username;
                             return (
-                                <GlassCard key={f.user_id} className="animate-slide-up" style={{ padding: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
-                                        <div style={{ width: 50, height: 50, borderRadius: '50%', background: 'var(--bg-dark)', border: '2px solid var(--accent)', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem', position: 'relative' }}>
-                                            ğŸ‘¤
-                                            {count > 0 && <span style={{ position: 'absolute', top: -5, right: -5, background: 'var(--danger)', color: 'white', fontSize: '0.7rem', width: 20, height: 20, borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', boxShadow: '0 0 5px var(--danger)' }}>{count}</span>}
-                                            {f.is_online && <span style={{ position: 'absolute', bottom: 0, right: 0, background: 'var(--success)', width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--bg-dark)' }} title="Ã‡evrimiÃ§i"></span>}
+                                <GlassCard
+                                    key={f.user_id}
+                                    className="animate-slide-up"
+                                    style={{ padding: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 15, minWidth: 0 }}>
+                                        <div className="friends-avatar">
+                                            <span className="friends-avatar-initial">{getAvatarInitial(name)}</span>
+                                            {count > 0 && <span className="friends-avatar-badge">{count}</span>}
+                                            {f.is_online && <span className="friends-avatar-online" title="Çevrimiçi" />}
                                         </div>
-                                        <div>
-                                            <h4 style={{ color: 'white', fontSize: '1.1rem' }}>{f.display_name || f.username}</h4>
+                                        <div style={{ minWidth: 0 }}>
+                                            <h4 style={{ color: 'white', fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {name}
+                                            </h4>
                                             <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>@{f.username}</span>
                                         </div>
                                     </div>
-                                    <button onClick={() => onChat(f)} className="btn-neon" style={{ padding: '8px 16px', fontSize: '0.9rem' }}>
-                                        MESAJ
-                                    </button>
-                                    <button onClick={() => onDelete(f.user_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', marginLeft: 10 }} title="Sil / Engelle">
-                                        ğŸ—‘ï¸
-                                    </button>
+
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                                        <button onClick={() => onChat(f)} className="btn-neon" style={{ padding: '8px 16px', fontSize: '0.9rem' }}>
+                                            MESAJ
+                                        </button>
+                                        <button
+                                            onClick={() => onDelete(f.user_id)}
+                                            className="friends-delete-btn"
+                                            title="Sil / Engelle"
+                                            aria-label="Arkadaşı sil veya engelle"
+                                        >
+                                            <TrashIcon />
+                                        </button>
+                                    </div>
                                 </GlassCard>
                             );
                         })
@@ -75,28 +126,27 @@ const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject, 
                             <p>Bekleyen istek yok.</p>
                         </div>
                     ) : (
-                        requests.map(r => (
-                            <GlassCard key={r.user_id} className="animate-slide-up" style={{ padding: 15, display: 'flex', alignRequests: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <span style={{ fontSize: '1.2rem' }}>ğŸ“©</span>
-                                    <div>
-                                        <h4 style={{ color: 'white' }}>@{r.username}</h4>
-                                    </div>
+                        requests.map((r) => (
+                            <GlassCard key={r.user_id} className="animate-slide-up" style={{ padding: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                                    <span className="friends-request-icon"><InboxIcon /></span>
+                                    <h4 style={{ color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{r.username}</h4>
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
-                                    <button onClick={() => onAccept(r.user_id)} style={{ background: 'var(--success)', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'black' }}>âœ“</button>
-                                    <button onClick={() => onReject(r.user_id)} style={{ background: 'var(--danger)', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'white' }}>âœ•</button>
+                                    <button onClick={() => onAccept(r.user_id)} className="friends-request-btn is-accept" aria-label="İsteği kabul et">
+                                        <CheckIcon />
+                                    </button>
+                                    <button onClick={() => onReject(r.user_id)} className="friends-request-btn is-reject" aria-label="İsteği reddet">
+                                        <CloseIcon />
+                                    </button>
                                 </div>
                             </GlassCard>
                         ))
                     )
                 )}
-
             </div>
         </div>
     );
 };
 
 export default FriendsScreen;
-
-

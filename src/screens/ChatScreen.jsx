@@ -21,6 +21,12 @@ const CameraIcon = () => (
 
 const COOL_NAMES = ['ShadowFox', 'NeonWraith', 'VoidRaven', 'EclipseOwl', 'CyberWolf', 'GhostDrifter'];
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const getAvatarInitial = (name) => {
+    const normalized = String(name || '').trim();
+    if (!normalized) return '?';
+    const chars = Array.from(normalized);
+    return (chars[0] || '?').toLocaleUpperCase('tr-TR');
+};
 
 const dataUrlToBytes = (dataUrl) => {
     if (typeof dataUrl !== 'string') return 0;
@@ -66,6 +72,7 @@ const ChatScreen = ({
     const mediaMenuRef = useRef(null);
 
     const displayName = peerName || randomName || 'Anonim';
+    const avatarInitial = getAvatarInitial(displayName);
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -170,18 +177,8 @@ const ChatScreen = ({
                 boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: '50%',
-                        background: 'var(--bg-dark)',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        border: '2px solid var(--primary)',
-                        boxShadow: '0 0 10px rgba(0,240,255,0.3)'
-                    }}>
-                        <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>BOT</span>
+                    <div className="chat-peer-avatar">
+                        <span className="chat-peer-avatar-initial">{avatarInitial}</span>
                     </div>
                     <div>
                         <h3 style={{ fontSize: '1rem', color: isFriendMode ? 'var(--accent)' : 'var(--primary)' }}>{displayName}</h3>
