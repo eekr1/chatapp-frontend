@@ -1,4 +1,41 @@
 const getPlugins = () => window.Capacitor?.Plugins || {};
+
+const normalizeCameraDataUrl = (photo) => {
+    if (!photo || typeof photo !== 'object') return null;
+
+    if (typeof photo.dataUrl === 'string' && photo.dataUrl.startsWith('data:')) {
+        return photo.dataUrl;
+    }
+
+    if (typeof photo.base64String === 'string' && photo.base64String.trim()) {
+        const format = String(photo.format || 'jpeg').toLowerCase();
+        return `data:image/${format};base64,${photo.base64String}`;
+    }
+
+    return null;
+};
+
+const pickNativeImage = async (source) => {
+    if (!isNativePlatform()) return null;
+    const { Camera } = getPlugins();
+    if (!Camera?.getPhoto) return null;
+
+    try {
+        const photo = await Camera.getPhoto({
+            quality: 80,
+            allowEditing: false,
+            resultType: 'dataUrl',
+            source,
+            width: 1600,
+            correctOrientation: true
+        });
+        return normalizeCameraDataUrl(photo);
+    } catch (e) {
+        console.warn('Native image pick failed:', e?.message || e);
+        return null;
+    }
+};
+
 export const CHANNEL_IDS = {
     messages: 'talkx_messages_v3',
     admin: 'talkx_admin_v3',
@@ -201,3 +238,7 @@ export const showLocalNotification = async ({ title, body, data }) => {
         return false;
     }
 };
+
+export const pickImageFromCamera = async () => pickNativeImage('CAMERA');
+
+export const pickImageFromGallery = async () => pickNativeImage('PHOTOS');

@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import GlassCard from '../components/GlassCard';
+import {
+    pickImageFromCamera,
+    pickImageFromGallery
+} from '../utils/nativeBridge';
 
 const SendIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -16,6 +20,23 @@ const CameraIcon = () => (
 );
 
 const COOL_NAMES = ['ShadowFox', 'NeonWraith', 'VoidRaven', 'EclipseOwl', 'CyberWolf', 'GhostDrifter'];
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+
+const dataUrlToBytes = (dataUrl) => {
+    if (typeof dataUrl !== 'string') return 0;
+    const commaIdx = dataUrl.indexOf(',');
+    if (commaIdx < 0) return 0;
+    const b64 = dataUrl.slice(commaIdx + 1);
+    const padding = b64.endsWith('==') ? 2 : (b64.endsWith('=') ? 1 : 0);
+    return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+};
+
+const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+    reader.onerror = () => reject(new Error('Dosya okunamadi.'));
+    reader.readAsDataURL(file);
+});
 
 const ChatScreen = ({
     messages,
@@ -36,9 +57,13 @@ const ChatScreen = ({
     onAddFriend,
 }) => {
     const [inputValue, setInputValue] = useState('');
+    const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
+    const [imageError, setImageError] = useState('');
     const [randomName] = useState(() => COOL_NAMES[Math.floor(Math.random() * COOL_NAMES.length)]);
     const endRef = useRef(null);
-    const fileInputRef = useRef(null);
+    const cameraInputRef = useRef(null);
+    const galleryInputRef = useRef(null);
+    const mediaMenuRef = useRef(null);
 
     const displayName = peerName || randomName || 'Anonim';
 
@@ -46,16 +71,86 @@ const ChatScreen = ({
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isTyping, isChatEnded]);
 
+    useEffect(() => {
+        if (!mediaMenuOpen) return undefined;
+        const onPointerDown = (event) => {
+            if (mediaMenuRef.current?.contains(event.target)) return;
+            setMediaMenuOpen(false);
+        };
+
+        document.addEventListener('pointerdown', onPointerDown);
+        return () => document.removeEventListener('pointerdown', onPointerDown);
+    }, [mediaMenuOpen]);
+
+    useEffect(() => {
+        if (!isFriendMode || isChatEnded) {
+            setMediaMenuOpen(false);
+            setImageError('');
+        }
+    }, [isFriendMode, isChatEnded]);
+
     const handleSubmit = (e) => {
         if (e?.preventDefault) e.preventDefault();
         if (!inputValue.trim() || isChatEnded) return;
         onSend(inputValue);
         setInputValue('');
+        setMediaMenuOpen(false);
     };
 
     const handleInput = (e) => {
         setInputValue(e.target.value);
         if (onTyping) onTyping();
+    };
+
+    const submitImageDataUrl = (dataUrl, explicitBytes = null) => {
+        if (!onSendImage || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+            setImageError('Gecersiz gorsel secimi.');
+            return;
+        }
+
+        const sizeBytes = explicitBytes ?? dataUrlToBytes(dataUrl);
+        if (sizeBytes > MAX_IMAGE_BYTES) {
+            setImageError('Gorsel boyutu en fazla 2MB olabilir.');
+            return;
+        }
+
+        setImageError('');
+        onSendImage(dataUrl);
+    };
+
+    const handleNativeSelection = async (mode) => {
+        setMediaMenuOpen(false);
+        setImageError('');
+
+        const nativeDataUrl = mode === 'camera'
+            ? await pickImageFromCamera()
+            : await pickImageFromGallery();
+
+        if (nativeDataUrl) {
+            submitImageDataUrl(nativeDataUrl);
+            return;
+        }
+
+        if (mode === 'camera') cameraInputRef.current?.click();
+        else galleryInputRef.current?.click();
+    };
+
+    const handleFileSelection = async (event) => {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = '';
+        if (!file) return;
+
+        if (file.size > MAX_IMAGE_BYTES) {
+            setImageError('Gorsel boyutu en fazla 2MB olabilir.');
+            return;
+        }
+
+        try {
+            const dataUrl = await readFileAsDataUrl(file);
+            submitImageDataUrl(dataUrl, file.size);
+        } catch (e) {
+            setImageError(e?.message || 'Gorsel okunamadi.');
+        }
     };
 
     return (
@@ -96,35 +191,16 @@ const ChatScreen = ({
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 10 }}>
+                <div className="chat-header-actions">
                     {!isFriendMode && onAddFriend && (
-                        <button onClick={onAddFriend} title="Arkadas Ekle" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }}>
-                            +
+                        <button onClick={onAddFriend} title="Arkadas Ekle" className="chat-add-friend-btn">
+                            + Arkadas
                         </button>
                     )}
-                    <button onClick={onReport} title="Raporla" style={{
-                        background: 'transparent',
-                        color: 'var(--danger)',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        fontSize: '1.2rem'
-                    }}>
+                    <button onClick={onReport} title="Raporla" className="chat-report-btn">
                         !
                     </button>
-                    <button onClick={onLeave} style={{
-                        background: 'rgba(255,56,96,0.1)',
-                        color: 'var(--danger)',
-                        border: 'none',
-                        width: 36,
-                        height: 36,
-                        borderRadius: '50%',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}>
+                    <button onClick={onLeave} className="chat-leave-btn">
                         x
                     </button>
                 </div>
@@ -261,29 +337,41 @@ const ChatScreen = ({
                 }}>
                     <GlassCard style={{ padding: 10, borderRadius: 24, display: 'flex', alignItems: 'center', gap: 10, maxWidth: 980, margin: '0 auto' }}>
                         {isFriendMode && (
-                            <>
+                            <div ref={mediaMenuRef} className="chat-media-menu-wrap">
+                                {mediaMenuOpen && (
+                                    <div className="chat-media-menu">
+                                        <button type="button" className="chat-media-menu-item" onClick={() => handleNativeSelection('camera')}>
+                                            Kamera
+                                        </button>
+                                        <button type="button" className="chat-media-menu-item" onClick={() => handleNativeSelection('gallery')}>
+                                            Galeri
+                                        </button>
+                                    </div>
+                                )}
                                 <input
-                                    ref={fileInputRef}
+                                    ref={cameraInputRef}
                                     type="file"
                                     style={{ display: 'none' }}
                                     accept="image/*"
-                                    onChange={(e) => {
-                                        const file = e.target.files && e.target.files[0];
-                                        if (!file) return;
-                                        if (file.size > 2 * 1024 * 1024) return alert('Dosya boyutu 2MB dan kucuk olmali.');
-
-                                        const reader = new FileReader();
-                                        reader.onload = () => {
-                                            if (onSendImage) onSendImage(reader.result);
-                                        };
-                                        reader.readAsDataURL(file);
-                                        e.target.value = '';
-                                    }}
+                                    capture="environment"
+                                    onChange={handleFileSelection}
                                 />
-                                <button onClick={() => fileInputRef.current?.click()} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 8 }}>
+                                <input
+                                    ref={galleryInputRef}
+                                    type="file"
+                                    style={{ display: 'none' }}
+                                    accept="image/*"
+                                    onChange={handleFileSelection}
+                                />
+                                <button
+                                    type="button"
+                                    className="chat-camera-btn"
+                                    onClick={() => setMediaMenuOpen((prev) => !prev)}
+                                    aria-label="Medya sec"
+                                >
                                     <CameraIcon />
                                 </button>
-                            </>
+                            </div>
                         )}
 
                         <form style={{ flex: 1, display: 'flex' }} onSubmit={handleSubmit}>
@@ -318,6 +406,7 @@ const ChatScreen = ({
                             <SendIcon />
                         </button>
                     </GlassCard>
+                    {imageError && <div className="chat-image-error">{imageError}</div>}
                 </div>
             )}
 
