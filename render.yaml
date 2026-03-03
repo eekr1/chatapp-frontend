@@ -1,3 +1,7 @@
+# NOTE:
+# This file is only used when the Render service is managed via Blueprint sync.
+# If your service is a classic Static Site (manual dashboard setup), this file is ignored.
+# In classic mode, configure Redirects/Rewrites from Render Dashboard.
 services:
   - type: web
     runtime: static

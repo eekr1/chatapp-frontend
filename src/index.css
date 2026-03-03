@@ -360,12 +360,16 @@ h4 {
 
 .legal-screen-wrap {
   justify-content: center;
+  align-items: center;
+  width: 100%;
   padding-top: calc(var(--safe-top) + 24px);
   padding-bottom: calc(var(--safe-bottom) + 24px);
 }
 
 .legal-screen-card {
   width: min(840px, 100%);
+  margin-inline: auto;
+  align-self: center;
   max-height: min(84vh, 920px);
   overflow: auto;
   padding: 20px;
