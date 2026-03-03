@@ -1,0 +1,12 @@
+services:
+  - type: web
+    runtime: static
+    # IMPORTANT: replace with your existing Render Static Site service name
+    # before enabling Blueprint sync, so Render updates the same service.
+    name: chatapp-frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
