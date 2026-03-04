@@ -97,8 +97,11 @@ export const profile = {
 export const friends = {
     request: (target_username) => api.post('/friends/request', { target_username }),
     list: () => api.get('/friends/list'),
+    listBlocked: () => api.get('/friends/blocked'),
     accept: (request_user_id) => api.post('/friends/accept', { request_user_id }),
     reject: (target_user_id) => api.post('/friends/reject', { target_user_id }),
+    block: (target_user_id) => api.post('/friends/block', { target_user_id }),
+    unblock: (target_user_id) => api.post('/friends/unblock', { target_user_id }),
     delete: (friendId) => api.delete(`/friends/${friendId}`),
     getHistory: (friendId) => api.get(`/friends/history/${friendId}`)
 };

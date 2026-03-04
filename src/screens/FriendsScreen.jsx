@@ -22,6 +22,14 @@ const TrashIcon = () => (
     </svg>
 );
 
+const BlockIcon = () => (
+    <svg className="friends-inline-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 5.8A2.8 2.8 0 0 1 9.8 3h4.4A2.8 2.8 0 0 1 17 5.8V8h.9A2.1 2.1 0 0 1 20 10.1v8.8A2.1 2.1 0 0 1 17.9 21H6.1A2.1 2.1 0 0 1 4 18.9v-8.8A2.1 2.1 0 0 1 6.1 8H7V5.8Z" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M7 8h10" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M8 16h8" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+);
+
 const CheckIcon = () => (
     <svg className="friends-inline-icon" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M5.5 12.5L10.2 17L18.5 8.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
@@ -41,7 +49,19 @@ const getAvatarInitial = (name) => {
     return (chars[0] || '?').toLocaleUpperCase('tr-TR');
 };
 
-const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject, onDelete, unreadCounts = {} }) => {
+const FriendsScreen = ({
+    friends,
+    requests,
+    blockedUsers = [],
+    onBack,
+    onChat,
+    onAccept,
+    onReject,
+    onDelete,
+    onBlock,
+    onUnblock,
+    unreadCounts = {}
+}) => {
     const [tab, setTab] = useState('list');
 
     return (
@@ -53,7 +73,7 @@ const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject, 
                 <h2 style={{ fontSize: '1.5rem', color: 'var(--accent)' }}>ARKADAŞLAR</h2>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
                 <button
                     className={tab === 'list' ? 'btn-solid-purple' : 'btn-neon'}
                     style={tab !== 'list' ? { borderColor: 'var(--text-dim)', color: 'var(--text-dim)' } : {}}
@@ -67,6 +87,13 @@ const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject, 
                     onClick={() => setTab('requests')}
                 >
                     İstekler {requests.length > 0 && <span className="friends-tab-badge">{requests.length}</span>}
+                </button>
+                <button
+                    className={tab === 'blocked' ? 'btn-solid-purple' : 'btn-neon'}
+                    style={tab !== 'blocked' ? { borderColor: 'var(--text-dim)', color: 'var(--text-dim)' } : {}}
+                    onClick={() => setTab('blocked')}
+                >
+                    Engellenenler {blockedUsers.length > 0 && <span className="friends-tab-badge">{blockedUsers.length}</span>}
                 </button>
             </div>
 
@@ -106,10 +133,18 @@ const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject, 
                                             MESAJ
                                         </button>
                                         <button
+                                            onClick={() => onBlock?.(f.user_id)}
+                                            className="friends-block-btn"
+                                            title="Kullanıcıyı engelle"
+                                            aria-label="Kullanıcıyı engelle"
+                                        >
+                                            <BlockIcon />
+                                        </button>
+                                        <button
                                             onClick={() => onDelete(f.user_id)}
                                             className="friends-delete-btn"
-                                            title="Sil / Engelle"
-                                            aria-label="Arkadaşı sil veya engelle"
+                                            title="Arkadaşı sil"
+                                            aria-label="Arkadaşı sil"
                                         >
                                             <TrashIcon />
                                         </button>
@@ -142,6 +177,45 @@ const FriendsScreen = ({ friends, requests, onBack, onChat, onAccept, onReject, 
                                 </div>
                             </GlassCard>
                         ))
+                    )
+                )}
+
+                {tab === 'blocked' && (
+                    blockedUsers.length === 0 ? (
+                        <div className="center-flex" style={{ flex: 1, color: 'var(--text-dim)', opacity: 0.6 }}>
+                            <p>Engellenen kullanıcı yok.</p>
+                        </div>
+                    ) : (
+                        blockedUsers.map((blocked) => {
+                            const name = blocked.display_name || blocked.username;
+                            return (
+                                <GlassCard
+                                    key={blocked.user_id}
+                                    className="animate-slide-up"
+                                    style={{ padding: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 15, minWidth: 0 }}>
+                                        <div className="friends-avatar">
+                                            <span className="friends-avatar-initial">{getAvatarInitial(name)}</span>
+                                        </div>
+                                        <div style={{ minWidth: 0 }}>
+                                            <h4 style={{ color: 'white', fontSize: '1.02rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {name}
+                                            </h4>
+                                            <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>@{blocked.username}</span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => onUnblock?.(blocked.user_id)}
+                                        className="friends-unblock-btn"
+                                        title="Engeli kaldır"
+                                        aria-label="Engeli kaldır"
+                                    >
+                                        Engeli Kaldır
+                                    </button>
+                                </GlassCard>
+                            );
+                        })
                     )
                 )}
             </div>

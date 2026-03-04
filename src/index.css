@@ -566,6 +566,47 @@ h4 {
   box-shadow: 0 0 12px rgba(255, 128, 166, 0.32);
 }
 
+.friends-block-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 190, 118, 0.45);
+  background: rgba(57, 34, 14, 0.82);
+  color: #ffd18a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
+}
+
+.friends-block-btn:hover,
+.friends-block-btn:focus-visible {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 0 12px rgba(255, 192, 120, 0.32);
+}
+
+.friends-unblock-btn {
+  border: 1px solid rgba(0, 240, 255, 0.5);
+  border-radius: 999px;
+  background: rgba(13, 31, 45, 0.82);
+  color: #bcf8ff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+.friends-unblock-btn:hover,
+.friends-unblock-btn:focus-visible {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: 0 0 12px rgba(97, 226, 255, 0.32);
+}
+
 .friends-request-icon {
   width: 32px;
   height: 32px;

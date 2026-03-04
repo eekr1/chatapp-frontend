@@ -309,6 +309,7 @@ function App() {
 
   const [friendList, setFriendList] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
+  const [blockedUsers, setBlockedUsers] = useState([]);
   const [activeFriend, setActiveFriend] = useState(null);
   const [unreadCounts, setUnreadCounts] = useState({});
 
@@ -530,12 +531,16 @@ function App() {
 
   const loadFriends = useCallback(async () => {
     try {
-      const res = await friends.list();
-      setFriendList(res.data.friends || []);
-      setFriendRequests(res.data.incoming || []);
+      const [listRes, blockedRes] = await Promise.all([
+        friends.list(),
+        friends.listBlocked().catch(() => ({ data: { blocked: [] } }))
+      ]);
+      setFriendList(listRes.data.friends || []);
+      setFriendRequests(listRes.data.incoming || []);
+      setBlockedUsers(blockedRes.data.blocked || []);
 
       const initialUnread = {};
-      (res.data.friends || []).forEach((f) => {
+      (listRes.data.friends || []).forEach((f) => {
         if (f.unread_count > 0) initialUnread[f.user_id] = f.unread_count;
       });
       setUnreadCounts(initialUnread);
@@ -1276,6 +1281,7 @@ function App() {
 
     setFriendList([]);
     setFriendRequests([]);
+    setBlockedUsers([]);
     setActiveFriend(null);
     setUnreadCounts({});
 
@@ -1360,13 +1366,38 @@ function App() {
   };
 
   const handleDeleteFriend = async (friendId) => {
-    if (!window.confirm('Bu arkadasi silmek ve engellemek istediginize emin misiniz?')) return;
+    if (!window.confirm('Bu arkadasi silmek istediginize emin misiniz?')) return;
     try {
       await friends.delete(friendId);
       loadFriends();
     } catch (e) {
       console.error(e);
       alert('Silinemedi.');
+    }
+  };
+
+  const handleBlockUser = async (friendId) => {
+    if (!window.confirm('Bu kullaniciyi engellemek istediginize emin misiniz?')) return;
+    try {
+      await friends.block(friendId);
+      if (activeFriend?.user_id === friendId) {
+        handleLeaveChat();
+      }
+      loadFriends();
+    } catch (e) {
+      console.error(e);
+      alert(e.response?.data?.error || 'Engelleme islemi basarisiz.');
+    }
+  };
+
+  const handleUnblockUser = async (friendId) => {
+    if (!window.confirm('Bu kullanicinin engelini kaldirmak istediginize emin misiniz?')) return;
+    try {
+      await friends.unblock(friendId);
+      loadFriends();
+    } catch (e) {
+      console.error(e);
+      alert(e.response?.data?.error || 'Engel kaldirma islemi basarisiz.');
     }
   };
 
@@ -1781,12 +1812,15 @@ function App() {
       <FriendsScreen
         friends={friendList}
         requests={friendRequests}
+        blockedUsers={blockedUsers}
         unreadCounts={unreadCounts}
         onBack={() => setScreen('home')}
         onChat={handleStartFriendChat}
         onAccept={handleAcceptRequest}
         onReject={handleRejectRequest}
         onDelete={handleDeleteFriend}
+        onBlock={handleBlockUser}
+        onUnblock={handleUnblockUser}
       />
     );
   }
