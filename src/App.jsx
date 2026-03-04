@@ -533,7 +533,14 @@ function App() {
     try {
       const [listRes, blockedRes] = await Promise.all([
         friends.list(),
-        friends.listBlocked().catch(() => ({ data: { blocked: [] } }))
+        friends.listBlocked().catch((error) => {
+          console.error('[friends/listBlocked]', {
+            status: error?.response?.status || null,
+            data: error?.response?.data || null,
+            message: error?.message || 'Unknown error'
+          });
+          return { data: { blocked: [] } };
+        })
       ]);
       setFriendList(listRes.data.friends || []);
       setFriendRequests(listRes.data.incoming || []);
@@ -1386,7 +1393,9 @@ function App() {
       loadFriends();
     } catch (e) {
       console.error(e);
-      alert(e.response?.data?.error || 'Engelleme islemi basarisiz.');
+      const backendMessage = e?.response?.data?.error || 'Engelleme islemi basarisiz.';
+      const backendCode = e?.response?.data?.code;
+      alert(backendCode ? `${backendMessage} (${backendCode})` : backendMessage);
     }
   };
 
@@ -1397,7 +1406,9 @@ function App() {
       loadFriends();
     } catch (e) {
       console.error(e);
-      alert(e.response?.data?.error || 'Engel kaldirma islemi basarisiz.');
+      const backendMessage = e?.response?.data?.error || 'Engel kaldirma islemi basarisiz.';
+      const backendCode = e?.response?.data?.code;
+      alert(backendCode ? `${backendMessage} (${backendCode})` : backendMessage);
     }
   };
 
