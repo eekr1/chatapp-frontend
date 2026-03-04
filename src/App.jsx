@@ -22,7 +22,10 @@ import {
   isNativePlatform,
   setupViewportInsets,
   configureNativeSystemUi,
+  addNativeBackButtonListener,
+  exitNativeApp,
   initNativePush,
+  requestInitialPermissions,
   showLocalNotification,
   CHANNEL_IDS
 } from './utils/nativeBridge';
@@ -54,6 +57,8 @@ const OUTBOX_MAX_ATTEMPTS = 5;
 const PUSH_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const PUSH_LAST_REGISTER_AT_KEY = 'talkx_push_last_register_at';
 const PUSH_LAST_REGISTER_ERROR_KEY = 'talkx_push_last_register_error';
+const PERMISSIONS_ONBOARDED_KEY = 'talkx_permissions_onboarded_v1';
+const BACK_EXIT_WINDOW_MS = 1900;
 const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const nowTs = () => Date.now();
 
@@ -319,6 +324,9 @@ function App() {
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const [legalContent, setLegalContent] = useState(() => cloneLegalContent());
   const [legalLoaded, setLegalLoaded] = useState(false);
+  const [showPermissionOnboarding, setShowPermissionOnboarding] = useState(false);
+  const [permissionsRequesting, setPermissionsRequesting] = useState(false);
+  const [nativePermissionsReady, setNativePermissionsReady] = useState(() => !IS_NATIVE);
 
   const ws = useRef(null);
   const reconnectTimerRef = useRef(null);
@@ -342,6 +350,7 @@ function App() {
   const outboxReadyRef = useRef(false);
   const flushOutboxFnRef = useRef(() => { });
   const connectWsFnRef = useRef(() => { });
+  const backPressAtRef = useRef(0);
 
   const IMAGE_FETCH_TIMEOUT_MS = 12000;
   const initialImageViewer = {
@@ -563,6 +572,37 @@ function App() {
     configureNativeSystemUi();
     return cleanupInsets;
   }, []);
+
+  useEffect(() => {
+    if (!IS_NATIVE) {
+      setNativePermissionsReady(true);
+      setShowPermissionOnboarding(false);
+      setPermissionsRequesting(false);
+      return;
+    }
+    if (!user) {
+      setNativePermissionsReady(false);
+      setShowPermissionOnboarding(false);
+      setPermissionsRequesting(false);
+      return;
+    }
+
+    let onboarded = false;
+    try {
+      onboarded = localStorage.getItem(PERMISSIONS_ONBOARDED_KEY) === '1';
+    } catch {
+      onboarded = false;
+    }
+
+    if (onboarded) {
+      setNativePermissionsReady(true);
+      setShowPermissionOnboarding(false);
+      return;
+    }
+
+    setNativePermissionsReady(false);
+    setShowPermissionOnboarding(true);
+  }, [user]);
 
   const notifyIncoming = useCallback(async ({ title, body, data, durationMs = 10000, local = false }) => {
     showToast(title, body, durationMs);
@@ -1092,6 +1132,7 @@ function App() {
 
   useEffect(() => {
     if (!user) return;
+    if (IS_NATIVE && !nativePermissionsReady) return;
     let dispose = () => { };
 
     (async () => {
@@ -1105,7 +1146,8 @@ function App() {
         },
         onPushAction: (notification) => {
           handlePushPayload(notification.notification || notification, false);
-        }
+        },
+        requestPermission: false
       });
     })();
 
@@ -1116,7 +1158,7 @@ function App() {
         if (IS_DEV) console.warn('Push dispose failed:', e?.message || e);
       }
     };
-  }, [user, registerPushToken, handlePushPayload]);
+  }, [user, registerPushToken, handlePushPayload, nativePermissionsReady]);
 
   useEffect(() => {
     if (!user) return;
@@ -1146,6 +1188,53 @@ function App() {
       window.removeEventListener('focus', onForeground);
     };
   }, [user, registerPushToken]);
+
+  const completePermissionOnboarding = useCallback((result = null) => {
+    try {
+      localStorage.setItem(PERMISSIONS_ONBOARDED_KEY, '1');
+    } catch {
+      // Best effort only.
+    }
+
+    setShowPermissionOnboarding(false);
+    setPermissionsRequesting(false);
+    setNativePermissionsReady(true);
+
+    if (!result) return;
+    const pushGranted = result?.push?.status === 'granted';
+    const mediaGranted = result?.media?.status === 'granted';
+
+    if (pushGranted && mediaGranted) {
+      showToast('TalkX', 'İzin ayarları tamamlandı.', 4200);
+      return;
+    }
+    if (!pushGranted) {
+      showToast('TalkX', 'Bildirim izni kapalı. Ayarlardan açabilirsiniz.', 6200);
+    }
+    if (!mediaGranted) {
+      showToast('TalkX', 'Kamera izni kapalı. Ayarlardan açabilirsiniz.', 6200);
+    }
+  }, [showToast]);
+
+  const handleEnablePermissions = useCallback(async () => {
+    if (permissionsRequesting) return;
+    setPermissionsRequesting(true);
+
+    try {
+      const result = await requestInitialPermissions();
+      completePermissionOnboarding(result);
+    } catch (e) {
+      console.warn('Initial permission request failed:', e?.message || e);
+      completePermissionOnboarding(null);
+      showToast('TalkX', 'İzin akışı tamamlanamadı. Ayarlardan açabilirsiniz.', 6200);
+    }
+  }, [completePermissionOnboarding, permissionsRequesting, showToast]);
+
+  const handleSkipPermissions = useCallback(() => {
+    if (permissionsRequesting) return;
+    completePermissionOnboarding(null);
+    showToast('TalkX', 'İzinleri daha sonra Ayarlar menüsünden açabilirsiniz.', 5800);
+  }, [completePermissionOnboarding, permissionsRequesting, showToast]);
 
   const handleLogout = async () => {
     shouldReconnectRef.current = false;
@@ -1442,7 +1531,10 @@ function App() {
       showToast('TalkX', message, 6500);
       return { ok: false, error: message };
     } finally {
-      setSupportSubmitting(false);
+    setSupportSubmitting(false);
+    setShowPermissionOnboarding(false);
+    setPermissionsRequesting(false);
+    setNativePermissionsReady(!IS_NATIVE);
     }
   };
 
@@ -1453,6 +1545,79 @@ function App() {
     }
     setImageViewer(initialImageViewer);
   };
+
+  useEffect(() => {
+    if (!IS_NATIVE) return () => { };
+
+    let dispose = () => { };
+    const exitWithDoubleBack = () => {
+      const now = Date.now();
+      if (now - backPressAtRef.current <= BACK_EXIT_WINDOW_MS) {
+        exitNativeApp();
+        return;
+      }
+      backPressAtRef.current = now;
+      showToast('TalkX', 'Çıkmak için tekrar geri basın.', 1800);
+    };
+
+    (async () => {
+      dispose = await addNativeBackButtonListener(() => {
+        if (showPermissionOnboarding) {
+          handleSkipPermissions();
+          return;
+        }
+
+        if (legalKind) {
+          window.location.href = '/';
+          return;
+        }
+
+        if (!user) {
+          exitWithDoubleBack();
+          return;
+        }
+
+        if (imageViewer?.open) {
+          closeImageViewer();
+          return;
+        }
+
+        if (screenRef.current === 'chat' || screenRef.current === 'matching') {
+          handleLeaveChat();
+          return;
+        }
+
+        if (screenRef.current === 'friends') {
+          setScreen('home');
+          return;
+        }
+
+        if (screenRef.current === 'home' || screenRef.current === 'splash') {
+          exitWithDoubleBack();
+          return;
+        }
+
+        setScreen('home');
+      });
+    })();
+
+    return () => {
+      try {
+        dispose();
+      } catch (e) {
+        if (IS_DEV) console.warn('Back button dispose failed:', e?.message || e);
+      }
+    };
+  }, [
+    legalKind,
+    user,
+    imageViewer?.open,
+    showPermissionOnboarding,
+    closeImageViewer,
+    handleLeaveChat,
+    handleSkipPermissions,
+    showToast
+  ]);
 
   const handleSendImage = (base64) => {
     if (chatMode !== 'friends' || !activeFriend?.user_id) return;
@@ -1542,10 +1707,35 @@ function App() {
     </div>
   ), [notices, dismissToast]);
 
+  const permissionOnboarding = IS_NATIVE && user && showPermissionOnboarding && (
+    <div className="permissions-onboarding-overlay">
+      <div className="permissions-onboarding-card glass-card" role="dialog" aria-modal="true" aria-labelledby="permissions-onboarding-title">
+        <h3 id="permissions-onboarding-title" className="permissions-onboarding-title">İzinleri tamamlayın</h3>
+        <p className="permissions-onboarding-desc">
+          TalkX deneyimi için bildirim, kamera ve galeri izinlerini şimdi ayarlayabilirsiniz.
+          İzin vermeseniz de uygulama çalışır; ihtiyaç olduğunda ayarlardan açabilirsiniz.
+        </p>
+        <div className="permissions-onboarding-list">
+          <div className="permissions-onboarding-item">Bildirim: yeni mesaj ve duyuru bildirimleri</div>
+          <div className="permissions-onboarding-item">Kamera/Galeri: fotoğraf çekme ve gönderme</div>
+        </div>
+        <div className="permissions-onboarding-actions">
+          <button type="button" className="btn-neon" onClick={handleSkipPermissions} disabled={permissionsRequesting}>
+            Şimdi Değil
+          </button>
+          <button type="button" className="btn-solid-purple" onClick={handleEnablePermissions} disabled={permissionsRequesting}>
+            {permissionsRequesting ? 'İsteniyor...' : 'İzinleri Aç'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const withToasts = (content) => (
     <>
       {content}
       {toastStack}
+      {permissionOnboarding}
     </>
   );
 

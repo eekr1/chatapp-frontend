@@ -1,5 +1,13 @@
 const getPlugins = () => window.Capacitor?.Plugins || {};
 
+const normalizePermissionState = (value) => {
+    const raw = String(value || '').toLowerCase().trim();
+    if (raw === 'granted' || raw === 'limited') return 'granted';
+    if (raw === 'denied' || raw === 'prompt-with-rationale') return 'denied';
+    if (raw === 'prompt') return 'prompt';
+    return 'unavailable';
+};
+
 const normalizeCameraDataUrl = (photo) => {
     if (!photo || typeof photo !== 'object') return null;
 
@@ -138,7 +146,123 @@ export const configureNativeSystemUi = async () => {
     }
 };
 
-export const initNativePush = async ({ onToken, onPushReceived, onPushAction }) => {
+export const addNativeBackButtonListener = async (handler) => {
+    if (!isNativePlatform()) return () => { };
+    const { App } = getPlugins();
+    if (!App?.addListener || typeof handler !== 'function') return () => { };
+
+    try {
+        const listener = await App.addListener('backButton', (event) => {
+            try {
+                handler(event || {});
+            } catch (e) {
+                console.warn('Back button handler failed:', e?.message || e);
+            }
+        });
+        return () => {
+            try {
+                listener?.remove?.();
+            } catch (e) {
+                console.warn('Back button listener remove failed:', e?.message || e);
+            }
+        };
+    } catch (e) {
+        console.warn('Back button listener setup failed:', e?.message || e);
+        return () => { };
+    }
+};
+
+export const exitNativeApp = async () => {
+    if (!isNativePlatform()) return false;
+    const { App } = getPlugins();
+    if (!App?.exitApp) return false;
+    try {
+        await App.exitApp();
+        return true;
+    } catch (e) {
+        console.warn('Native exitApp failed:', e?.message || e);
+        return false;
+    }
+};
+
+export const requestPushPermission = async () => {
+    if (!isNativePlatform()) return { status: 'unavailable', source: 'web' };
+    const { PushNotifications } = getPlugins();
+    if (!PushNotifications?.checkPermissions || !PushNotifications?.requestPermissions) {
+        return { status: 'unavailable', source: 'plugin-missing' };
+    }
+
+    try {
+        let perm = await PushNotifications.checkPermissions();
+        let receive = normalizePermissionState(perm?.receive);
+        if (receive !== 'granted') {
+            perm = await PushNotifications.requestPermissions();
+            receive = normalizePermissionState(perm?.receive);
+        }
+        return { status: receive === 'granted' ? 'granted' : 'denied', raw: perm };
+    } catch (e) {
+        console.warn('Push permission request failed:', e?.message || e);
+        return { status: 'unavailable', error: e?.message || String(e) };
+    }
+};
+
+export const requestCameraAndPhotosPermission = async () => {
+    if (!isNativePlatform()) {
+        return {
+            status: 'unavailable',
+            camera: 'unavailable',
+            photos: 'unavailable',
+            source: 'web'
+        };
+    }
+    const { Camera } = getPlugins();
+    if (!Camera?.checkPermissions || !Camera?.requestPermissions) {
+        return {
+            status: 'unavailable',
+            camera: 'unavailable',
+            photos: 'unavailable',
+            source: 'plugin-missing'
+        };
+    }
+
+    try {
+        let perms = await Camera.checkPermissions();
+        let camera = normalizePermissionState(perms?.camera);
+        let photos = normalizePermissionState(perms?.photos);
+
+        if (camera !== 'granted' || photos !== 'granted') {
+            perms = await Camera.requestPermissions();
+            camera = normalizePermissionState(perms?.camera);
+            photos = normalizePermissionState(perms?.photos);
+        }
+
+        const status = camera === 'granted' && photos === 'granted'
+            ? 'granted'
+            : 'denied';
+        return { status, camera, photos, raw: perms };
+    } catch (e) {
+        console.warn('Camera/photos permission request failed:', e?.message || e);
+        return {
+            status: 'unavailable',
+            camera: 'unavailable',
+            photos: 'unavailable',
+            error: e?.message || String(e)
+        };
+    }
+};
+
+export const requestInitialPermissions = async () => {
+    const push = await requestPushPermission();
+    const media = await requestCameraAndPhotosPermission();
+    return { push, media };
+};
+
+export const initNativePush = async ({
+    onToken,
+    onPushReceived,
+    onPushAction,
+    requestPermission = true
+}) => {
     if (!isNativePlatform()) return () => { };
     const { PushNotifications } = getPlugins();
     if (!PushNotifications) return () => { };
@@ -153,6 +277,7 @@ export const initNativePush = async ({ onToken, onPushReceived, onPushAction }) 
     try {
         let perm = await PushNotifications.checkPermissions();
         if (perm.receive !== 'granted') {
+            if (!requestPermission) return () => { };
             perm = await PushNotifications.requestPermissions();
         }
         if (perm.receive !== 'granted') return () => { };

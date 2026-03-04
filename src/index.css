@@ -386,11 +386,40 @@ h4 {
   margin-bottom: 12px;
 }
 
+.legal-header-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .legal-back-link {
   text-decoration: none;
   color: var(--primary);
   font-family: var(--font-logo);
   letter-spacing: 1px;
+}
+
+.legal-back-btn {
+  text-decoration: none;
+  color: rgba(214, 238, 255, 0.9);
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 197, 255, 0.42);
+  background: rgba(17, 31, 52, 0.72);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.legal-back-btn:hover,
+.legal-back-btn:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(156, 220, 255, 0.65);
+  box-shadow: 0 0 12px rgba(127, 208, 255, 0.3);
 }
 
 .legal-lang-pill {
@@ -1090,6 +1119,70 @@ h4 {
   font-size: 0.8rem;
 }
 
+.permissions-onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  background: rgba(6, 9, 16, 0.74);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.permissions-onboarding-card {
+  width: min(560px, 100%);
+  border-radius: 18px;
+  padding: 18px 16px;
+  border: 1px solid rgba(108, 200, 255, 0.32);
+  background:
+    radial-gradient(125% 85% at 5% 0%, rgba(74, 190, 255, 0.11), rgba(74, 190, 255, 0)),
+    rgba(13, 18, 32, 0.9);
+  box-shadow: 0 28px 58px rgba(1, 5, 18, 0.58);
+}
+
+.permissions-onboarding-title {
+  font-size: 1.02rem;
+  color: #e6f6ff;
+  margin-bottom: 8px;
+}
+
+.permissions-onboarding-desc {
+  color: rgba(213, 225, 244, 0.84);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+
+.permissions-onboarding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.permissions-onboarding-item {
+  border: 1px solid rgba(122, 155, 201, 0.25);
+  border-radius: 11px;
+  padding: 10px 11px;
+  background: rgba(21, 29, 47, 0.52);
+  color: rgba(220, 233, 251, 0.88);
+  font-size: 0.79rem;
+}
+
+.permissions-onboarding-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.permissions-onboarding-actions .btn-neon,
+.permissions-onboarding-actions .btn-solid-purple {
+  padding: 9px 14px;
+  font-size: 0.8rem;
+}
+
 @media (max-width: 600px) {
   .home-footer {
     padding-bottom: calc(var(--safe-bottom) + 102px);
@@ -1115,12 +1208,19 @@ h4 {
     border-radius: 16px;
   }
 
+  .permissions-onboarding-card {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
   .support-actions {
     width: 100%;
   }
 
   .support-actions .btn-neon,
-  .support-actions .btn-solid-purple {
+  .support-actions .btn-solid-purple,
+  .permissions-onboarding-actions .btn-neon,
+  .permissions-onboarding-actions .btn-solid-purple {
     flex: 1;
   }
 

@@ -37,7 +37,12 @@ const LegalScreen = ({ kind = 'privacy', legalContent = null, loading = false })
         <div className="screen-container legal-screen-wrap">
             <div className="legal-screen-card glass-card">
                 <header className="legal-screen-header">
-                    <a href="/" className="legal-back-link">TalkX</a>
+                    <div className="legal-header-left">
+                        <a href="/" className="legal-back-link">TalkX</a>
+                        <a href="/" className="legal-back-btn" aria-label="Ana Sayfaya Dön">
+                            Ana Sayfaya Dön
+                        </a>
+                    </div>
                     <span className="legal-lang-pill">{lang.toUpperCase()}</span>
                 </header>
 
