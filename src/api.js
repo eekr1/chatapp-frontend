@@ -91,7 +91,8 @@ export const auth = {
 
 export const profile = {
     getMe: () => api.get('/api/me'),
-    updateMe: (data) => api.put('/api/me/profile', data)
+    updateMe: (data) => api.put('/api/me/profile', data),
+    changePassword: (current_password, new_password) => api.put('/api/me/password', { current_password, new_password })
 };
 
 export const friends = {

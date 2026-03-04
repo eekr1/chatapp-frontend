@@ -5,6 +5,7 @@ export default function Auth({ onLogin }) {
     const [isLogin, setIsLogin] = useState(true);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -50,11 +51,18 @@ export default function Auth({ onLogin }) {
                     />
                     <input
                         className="input-glass"
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         placeholder="Sifre"
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                     />
+                    <button
+                        type="button"
+                        className="auth-password-toggle"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                    >
+                        {showPassword ? 'Sifreyi Gizle' : 'Sifreyi Goster'}
+                    </button>
 
                     {error && <div className="error-text">{error}</div>}
 
@@ -73,7 +81,7 @@ export default function Auth({ onLogin }) {
                         {isLogin ? 'Hesabin yok mu? ' : 'Zaten hesabin var mi? '}
                         <span
                             style={{ color: 'var(--primary)', cursor: 'pointer', fontWeight: 'bold' }}
-                            onClick={() => { setIsLogin(!isLogin); setError(''); }}
+                            onClick={() => { setIsLogin(!isLogin); setError(''); setShowPassword(false); }}
                         >
                             {isLogin ? 'Kayit Ol' : 'Giris Yap'}
                         </span>

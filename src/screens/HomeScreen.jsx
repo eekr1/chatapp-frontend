@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
+import { profile } from '../api';
 
 const SUPPORT_SUBJECTS = [
     { value: 'connection', label: 'Baglanti' },
@@ -40,6 +41,8 @@ const isEmailValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value |
 const isExternalUrl = (value) => /^https:\/\//i.test(String(value || '').trim());
 
 const HomeScreen = ({
+    currentUser,
+    onUpdateUser,
     onSelectMode,
     onlineCount,
     unreadCount = 0,
@@ -55,6 +58,15 @@ const HomeScreen = ({
     const [supportEmail, setSupportEmail] = useState('');
     const [supportMediaFiles, setSupportMediaFiles] = useState([]);
     const [supportError, setSupportError] = useState('');
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [settingsDisplayName, setSettingsDisplayName] = useState(currentUser?.display_name || currentUser?.username || '');
+    const [settingsCurrentPassword, setSettingsCurrentPassword] = useState('');
+    const [settingsNewPassword, setSettingsNewPassword] = useState('');
+    const [settingsShowPassword, setSettingsShowPassword] = useState(false);
+    const [settingsSavingProfile, setSettingsSavingProfile] = useState(false);
+    const [settingsSavingPassword, setSettingsSavingPassword] = useState(false);
+    const [settingsMessage, setSettingsMessage] = useState('');
+    const [settingsError, setSettingsError] = useState('');
 
     const resetSupportForm = () => {
         setSupportSubject('connection');
@@ -73,6 +85,83 @@ const HomeScreen = ({
         if (supportSubmitting) return;
         setSupportOpen(false);
         setSupportError('');
+    };
+
+    const openSettingsModal = () => {
+        setSettingsDisplayName(currentUser?.display_name || currentUser?.username || '');
+        setSettingsCurrentPassword('');
+        setSettingsNewPassword('');
+        setSettingsShowPassword(false);
+        setSettingsMessage('');
+        setSettingsError('');
+        setSettingsOpen(true);
+    };
+
+    const closeSettingsModal = () => {
+        if (settingsSavingProfile || settingsSavingPassword) return;
+        setSettingsOpen(false);
+        setSettingsMessage('');
+        setSettingsError('');
+    };
+
+    const handleSettingsProfileSave = async (event) => {
+        event.preventDefault();
+        const nextDisplayName = String(settingsDisplayName || '').trim();
+        if (!nextDisplayName) {
+            setSettingsError('Gorunen isim bos olamaz.');
+            setSettingsMessage('');
+            return;
+        }
+
+        setSettingsSavingProfile(true);
+        setSettingsError('');
+        setSettingsMessage('');
+        try {
+            await profile.updateMe({ display_name: nextDisplayName });
+            if (typeof onUpdateUser === 'function') {
+                onUpdateUser((prev) => {
+                    if (!prev || typeof prev !== 'object') return prev;
+                    return { ...prev, display_name: nextDisplayName };
+                });
+            }
+            setSettingsMessage('Gorunen isim guncellendi.');
+        } catch (error) {
+            setSettingsError(error?.response?.data?.error || 'Gorunen isim guncellenemedi.');
+        } finally {
+            setSettingsSavingProfile(false);
+        }
+    };
+
+    const handleSettingsPasswordSave = async (event) => {
+        event.preventDefault();
+        const currentPassword = String(settingsCurrentPassword || '');
+        const newPassword = String(settingsNewPassword || '');
+
+        if (!currentPassword || !newPassword) {
+            setSettingsError('Mevcut sifre ve yeni sifre gerekli.');
+            setSettingsMessage('');
+            return;
+        }
+        if (newPassword.length < 6) {
+            setSettingsError('Yeni sifre en az 6 karakter olmali.');
+            setSettingsMessage('');
+            return;
+        }
+
+        setSettingsSavingPassword(true);
+        setSettingsError('');
+        setSettingsMessage('');
+        try {
+            const response = await profile.changePassword(currentPassword, newPassword);
+            setSettingsCurrentPassword('');
+            setSettingsNewPassword('');
+            setSettingsShowPassword(false);
+            setSettingsMessage(response?.data?.message || 'Sifre guncellendi.');
+        } catch (error) {
+            setSettingsError(error?.response?.data?.error || 'Sifre guncellenemedi.');
+        } finally {
+            setSettingsSavingPassword(false);
+        }
     };
 
     const handleMediaSelection = (event) => {
@@ -161,23 +250,31 @@ const HomeScreen = ({
                     <img src="/brand/talkx-icon-256.png" alt="TalkX icon" className="brand-lockup-icon" />
                     <h2 className="brand-lockup-text" style={{ fontSize: '1.5rem' }}>TalkX</h2>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="home-header-right">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ width: 8, height: 8, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 5px var(--success)' }} />
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontFamily: 'var(--font-display)' }}>
                             {onlineCount} Online
                         </span>
                     </div>
-                    {onLogout && (
+                    <div className="home-header-actions">
+                        {onLogout && (
+                            <button
+                                onClick={onLogout}
+                                className="btn-neon home-header-btn"
+                                title="Cikis Yap"
+                            >
+                                Cikis
+                            </button>
+                        )}
                         <button
-                            onClick={onLogout}
-                            className="btn-neon"
-                            style={{ padding: '8px 12px', borderRadius: 10, fontSize: '0.75rem' }}
-                            title="Cikis Yap"
+                            onClick={openSettingsModal}
+                            className="btn-neon home-header-btn home-settings-btn"
+                            title="Ayarlar"
                         >
-                            Cikis
+                            Ayarlar
                         </button>
-                    )}
+                    </div>
                 </div>
             </header>
 
@@ -358,6 +455,84 @@ const HomeScreen = ({
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {settingsOpen && (
+                <div className="support-modal-overlay" onClick={closeSettingsModal}>
+                    <div className="settings-modal-card glass-card" onClick={(event) => event.stopPropagation()}>
+                        <div className="support-modal-header">
+                            <h3>Ayarlar</h3>
+                            <button type="button" className="support-close-btn" onClick={closeSettingsModal} aria-label="Kapat">x</button>
+                        </div>
+
+                        <div className="settings-section">
+                            <h4>Hesap Bilgileri</h4>
+                            <label htmlFor="settings-username">Kullanici Adi</label>
+                            <input
+                                id="settings-username"
+                                className="input-glass settings-readonly"
+                                value={currentUser?.username || ''}
+                                readOnly
+                            />
+                        </div>
+
+                        <form className="settings-section" onSubmit={handleSettingsProfileSave}>
+                            <h4>Gorunen Isim</h4>
+                            <label htmlFor="settings-display-name">Gorunen Isim</label>
+                            <input
+                                id="settings-display-name"
+                                className="input-glass"
+                                value={settingsDisplayName}
+                                onChange={(event) => setSettingsDisplayName(event.target.value)}
+                                maxLength={40}
+                                disabled={settingsSavingProfile}
+                            />
+                            <div className="settings-actions">
+                                <button type="submit" className="btn-solid-purple" disabled={settingsSavingProfile}>
+                                    {settingsSavingProfile ? 'Kaydediliyor...' : 'Kaydet'}
+                                </button>
+                            </div>
+                        </form>
+
+                        <form className="settings-section" onSubmit={handleSettingsPasswordSave}>
+                            <h4>Sifre Degistir</h4>
+                            <label htmlFor="settings-current-password">Mevcut Sifre</label>
+                            <input
+                                id="settings-current-password"
+                                className="input-glass"
+                                type={settingsShowPassword ? 'text' : 'password'}
+                                value={settingsCurrentPassword}
+                                onChange={(event) => setSettingsCurrentPassword(event.target.value)}
+                                disabled={settingsSavingPassword}
+                            />
+                            <label htmlFor="settings-new-password">Yeni Sifre</label>
+                            <input
+                                id="settings-new-password"
+                                className="input-glass"
+                                type={settingsShowPassword ? 'text' : 'password'}
+                                value={settingsNewPassword}
+                                onChange={(event) => setSettingsNewPassword(event.target.value)}
+                                disabled={settingsSavingPassword}
+                            />
+                            <button
+                                type="button"
+                                className="settings-toggle-btn"
+                                onClick={() => setSettingsShowPassword((prev) => !prev)}
+                                disabled={settingsSavingPassword}
+                            >
+                                {settingsShowPassword ? 'Sifreyi Gizle' : 'Sifreyi Goster'}
+                            </button>
+                            <div className="settings-actions">
+                                <button type="submit" className="btn-solid-purple" disabled={settingsSavingPassword}>
+                                    {settingsSavingPassword ? 'Guncelleniyor...' : 'Sifreyi Degistir'}
+                                </button>
+                            </div>
+                        </form>
+
+                        {settingsError && <div className="support-error">{settingsError}</div>}
+                        {settingsMessage && <div className="settings-success">{settingsMessage}</div>}
                     </div>
                 </div>
             )}

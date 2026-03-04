@@ -1801,6 +1801,8 @@ function App() {
     const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
     return withToasts(
       <HomeScreen
+        currentUser={user}
+        onUpdateUser={setUser}
         onlineCount={onlineCount}
         unreadCount={totalUnread + (friendRequests.length || 0)}
         onLogout={handleLogout}
