@@ -1313,6 +1313,7 @@ function App() {
       connectWsFnRef.current();
       return;
     }
+    setChatMode('anon');
     ws.current?.send(JSON.stringify({ type: 'joinQueue' }));
     setScreen('matching');
   };
@@ -1431,7 +1432,7 @@ function App() {
       }
     }
 
-    setScreen('home');
+    setScreen(chatMode === 'friends' ? 'friends' : 'home');
     setMessages([]);
     setRoomId(null);
     setActiveFriend(null);

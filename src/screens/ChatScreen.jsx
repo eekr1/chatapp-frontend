@@ -269,7 +269,7 @@ const ChatScreen = ({
                     <h3 style={{ color: 'var(--danger)', fontSize: '1.2rem' }}>Sohbet Sonlandi</h3>
                     <div style={{ display: 'flex', gap: 15, width: '100%' }}>
                         <button onClick={onLeave} className="btn-neon" style={{ flex: 1, borderColor: 'var(--text-dim)', color: 'var(--text-dim)' }}>
-                            Ana Sayfa
+                            {isFriendMode ? 'Arkadaslara Don' : 'Ana Sayfa'}
                         </button>
                         <button onClick={onNewMatch} className="btn-solid-purple" style={{ flex: 1 }}>
                             Yeni Eslesme
