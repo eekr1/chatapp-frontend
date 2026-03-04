@@ -93,7 +93,7 @@ const FriendsScreen = ({
                     style={tab !== 'blocked' ? { borderColor: 'var(--text-dim)', color: 'var(--text-dim)' } : {}}
                     onClick={() => setTab('blocked')}
                 >
-                    Engellenenler {blockedUsers.length > 0 && <span className="friends-tab-badge">{blockedUsers.length}</span>}
+                    Engellenenler
                 </button>
             </div>
 
