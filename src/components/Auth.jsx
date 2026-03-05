@@ -1,13 +1,39 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { auth } from '../api';
 
-export default function Auth({ onLogin }) {
+const DEFAULT_LEGAL_FOOTER = Object.freeze({
+    privacyLabel: 'Gizlilik Politikasi',
+    privacyUrl: '/privacy-policy',
+    termsLabel: 'Kullanim Sartlari',
+    termsUrl: '/terms-of-use'
+});
+
+const DEFAULT_LEGAL_VERSIONS = Object.freeze({
+    terms: 'v1',
+    privacy: 'v1'
+});
+
+const isExternalUrl = (value) => /^https:\/\//i.test(String(value || '').trim());
+
+export default function Auth({ onLogin, legalFooter, legalVersions }) {
     const [isLogin, setIsLogin] = useState(true);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const [acceptLegal, setAcceptLegal] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    const footer = useMemo(
+        () => ({ ...DEFAULT_LEGAL_FOOTER, ...(legalFooter || {}) }),
+        [legalFooter]
+    );
+    const versions = useMemo(
+        () => ({ ...DEFAULT_LEGAL_VERSIONS, ...(legalVersions || {}) }),
+        [legalVersions]
+    );
+
+    const registerDisabled = loading || (!isLogin && !acceptLegal);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -19,12 +45,23 @@ export default function Auth({ onLogin }) {
                 const res = await auth.login(username, password, localStorage.getItem('anon_device_id') || 'unknown');
                 localStorage.setItem('session_token', res.data.token);
                 onLogin(res.data.user);
-            } else {
-                await auth.register(username, password);
-                const res = await auth.login(username, password, localStorage.getItem('anon_device_id') || 'unknown');
-                localStorage.setItem('session_token', res.data.token);
-                onLogin(res.data.user);
+                return;
             }
+
+            if (!acceptLegal) {
+                setError('Kayit icin sozlesmeyi kabul etmelisiniz.');
+                return;
+            }
+
+            await auth.register(username, password, {
+                terms_accepted: true,
+                terms_version: versions.terms,
+                privacy_version: versions.privacy
+            });
+
+            const res = await auth.login(username, password, localStorage.getItem('anon_device_id') || 'unknown');
+            localStorage.setItem('session_token', res.data.token);
+            onLogin(res.data.user);
         } catch (err) {
             setError(err.response?.data?.error || 'Bir hata olustu.');
         } finally {
@@ -46,7 +83,7 @@ export default function Auth({ onLogin }) {
                         className="input-glass"
                         placeholder="Kullanici adi"
                         value={username}
-                        onChange={e => setUsername(e.target.value)}
+                        onChange={(event) => setUsername(event.target.value)}
                         autoFocus
                     />
                     <input
@@ -54,7 +91,7 @@ export default function Auth({ onLogin }) {
                         type={showPassword ? 'text' : 'password'}
                         placeholder="Sifre"
                         value={password}
-                        onChange={e => setPassword(e.target.value)}
+                        onChange={(event) => setPassword(event.target.value)}
                     />
                     <button
                         type="button"
@@ -63,6 +100,33 @@ export default function Auth({ onLogin }) {
                     >
                         {showPassword ? 'Sifreyi Gizle' : 'Sifreyi Goster'}
                     </button>
+
+                    {!isLogin && (
+                        <label className="auth-legal-check">
+                            <input
+                                type="checkbox"
+                                checked={acceptLegal}
+                                onChange={(event) => setAcceptLegal(event.target.checked)}
+                            />
+                            <span>
+                                {' '}
+                                <a
+                                    href={footer.privacyUrl}
+                                    {...(isExternalUrl(footer.privacyUrl) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                                >
+                                    {footer.privacyLabel}
+                                </a>
+                                {' '}ve{' '}
+                                <a
+                                    href={footer.termsUrl}
+                                    {...(isExternalUrl(footer.termsUrl) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                                >
+                                    {footer.termsLabel}
+                                </a>
+                                {' '}metinlerini okudum ve kabul ediyorum.
+                            </span>
+                        </label>
+                    )}
 
                     {error && <div className="error-text">{error}</div>}
 
@@ -73,7 +137,7 @@ export default function Auth({ onLogin }) {
                         </div>
                     )}
 
-                    <button type="submit" disabled={loading} className="btn-solid-purple" style={{ marginTop: 10, width: '100%' }}>
+                    <button type="submit" disabled={registerDisabled} className="btn-solid-purple" style={{ marginTop: 10, width: '100%' }}>
                         {loading ? 'Isleniyor...' : (isLogin ? 'Giris Yap' : 'Kayit Ol')}
                     </button>
 
@@ -81,7 +145,12 @@ export default function Auth({ onLogin }) {
                         {isLogin ? 'Hesabin yok mu? ' : 'Zaten hesabin var mi? '}
                         <span
                             style={{ color: 'var(--primary)', cursor: 'pointer', fontWeight: 'bold' }}
-                            onClick={() => { setIsLogin(!isLogin); setError(''); setShowPassword(false); }}
+                            onClick={() => {
+                                setIsLogin(!isLogin);
+                                setError('');
+                                setShowPassword(false);
+                                setAcceptLegal(false);
+                            }}
                         >
                             {isLogin ? 'Kayit Ol' : 'Giris Yap'}
                         </span>

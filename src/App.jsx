@@ -211,6 +211,10 @@ const DEFAULT_LEGAL_CONTENT = Object.freeze({
     termsLabel: 'Kullanim Sartlari',
     termsUrl: '/terms-of-use'
   }),
+  versions: Object.freeze({
+    terms: 'v1',
+    privacy: 'v1'
+  }),
   documents: Object.freeze({
     privacy: Object.freeze({
       tr: Object.freeze({
@@ -263,6 +267,7 @@ const normalizeLegalContent = (value) => {
   const defaults = cloneLegalContent();
   const source = value && typeof value === 'object' ? value : {};
   const footerSource = source.footer && typeof source.footer === 'object' ? source.footer : {};
+  const versionsSource = source.versions && typeof source.versions === 'object' ? source.versions : {};
   const docsSource = source.documents && typeof source.documents === 'object' ? source.documents : {};
 
   const normalized = {
@@ -282,6 +287,14 @@ const normalizeLegalContent = (value) => {
       termsUrl: typeof footerSource.termsUrl === 'string' && footerSource.termsUrl.trim()
         ? footerSource.termsUrl.trim()
         : defaults.footer.termsUrl
+    },
+    versions: {
+      terms: typeof versionsSource.terms === 'string' && versionsSource.terms.trim()
+        ? versionsSource.terms.trim()
+        : defaults.versions.terms,
+      privacy: typeof versionsSource.privacy === 'string' && versionsSource.privacy.trim()
+        ? versionsSource.privacy.trim()
+        : defaults.versions.privacy
     },
     documents: {
       privacy: {
@@ -1307,6 +1320,12 @@ function App() {
     setImageViewer(initialImageViewer);
   };
 
+  const handleAccountDeletionRequested = async (message) => {
+    const finalMessage = String(message || '').trim() || 'Silme talebiniz alindi.';
+    await handleLogout();
+    showToast('TalkX', `${finalMessage} Inceleme tamamlanana kadar giris yapamazsiniz.`, 8200);
+  };
+
   const handleStartAnon = () => {
     if (!isWsReady()) {
       showToast('TalkX', 'Baglanti yeniden kuruluyor. Lutfen tekrar deneyin.', 4500);
@@ -1792,7 +1811,15 @@ function App() {
     );
   }
 
-  if (!user) return withToasts(<Auth onLogin={setUser} />);
+  if (!user) {
+    return withToasts(
+      <Auth
+        onLogin={setUser}
+        legalFooter={legalContent.footer}
+        legalVersions={legalContent.versions}
+      />
+    );
+  }
 
   if (screen === 'splash') {
     return withToasts(<SplashScreen onFinish={() => setScreen('home')} />);
@@ -1804,6 +1831,7 @@ function App() {
       <HomeScreen
         currentUser={user}
         onUpdateUser={setUser}
+        onDeletionCompleted={handleAccountDeletionRequested}
         onlineCount={onlineCount}
         unreadCount={totalUnread + (friendRequests.length || 0)}
         onLogout={handleLogout}

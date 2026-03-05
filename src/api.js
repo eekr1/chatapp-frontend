@@ -68,7 +68,11 @@ api.interceptors.response.use(
 );
 
 export const auth = {
-    register: (username, password) => api.post('/auth/register', { username, password }),
+    register: (username, password, legalPayload = {}) => api.post('/auth/register', {
+        username,
+        password,
+        ...legalPayload
+    }),
     login: (username, password, device_id) => api.post('/auth/login', { username, password, device_id }),
     logout: async () => {
         const token = localStorage.getItem('session_token');
@@ -92,7 +96,8 @@ export const auth = {
 export const profile = {
     getMe: () => api.get('/api/me'),
     updateMe: (data) => api.put('/api/me/profile', data),
-    changePassword: (current_password, new_password) => api.put('/api/me/password', { current_password, new_password })
+    changePassword: (current_password, new_password) => api.put('/api/me/password', { current_password, new_password }),
+    requestDeletion: (current_password, confirm_text) => api.post('/api/me/delete-request', { current_password, confirm_text })
 };
 
 export const friends = {

@@ -43,6 +43,7 @@ const isExternalUrl = (value) => /^https:\/\//i.test(String(value || '').trim())
 const HomeScreen = ({
     currentUser,
     onUpdateUser,
+    onDeletionCompleted,
     onSelectMode,
     onlineCount,
     unreadCount = 0,
@@ -65,6 +66,9 @@ const HomeScreen = ({
     const [settingsShowPassword, setSettingsShowPassword] = useState(false);
     const [settingsSavingProfile, setSettingsSavingProfile] = useState(false);
     const [settingsSavingPassword, setSettingsSavingPassword] = useState(false);
+    const [settingsDeleting, setSettingsDeleting] = useState(false);
+    const [settingsDeletePassword, setSettingsDeletePassword] = useState('');
+    const [settingsDeleteConfirm, setSettingsDeleteConfirm] = useState('');
     const [settingsMessage, setSettingsMessage] = useState('');
     const [settingsError, setSettingsError] = useState('');
 
@@ -92,13 +96,15 @@ const HomeScreen = ({
         setSettingsCurrentPassword('');
         setSettingsNewPassword('');
         setSettingsShowPassword(false);
+        setSettingsDeletePassword('');
+        setSettingsDeleteConfirm('');
         setSettingsMessage('');
         setSettingsError('');
         setSettingsOpen(true);
     };
 
     const closeSettingsModal = () => {
-        if (settingsSavingProfile || settingsSavingPassword) return;
+        if (settingsSavingProfile || settingsSavingPassword || settingsDeleting) return;
         setSettingsOpen(false);
         setSettingsMessage('');
         setSettingsError('');
@@ -129,6 +135,45 @@ const HomeScreen = ({
             setSettingsError(error?.response?.data?.error || 'Gorunen isim guncellenemedi.');
         } finally {
             setSettingsSavingProfile(false);
+        }
+    };
+
+    const handleSettingsDeleteAccount = async (event) => {
+        event.preventDefault();
+        const currentPassword = String(settingsDeletePassword || '');
+        const confirmText = String(settingsDeleteConfirm || '').trim();
+
+        if (!currentPassword) {
+            setSettingsError('Hesap silme icin mevcut sifre gerekli.');
+            setSettingsMessage('');
+            return;
+        }
+        if (confirmText !== 'HESABIMI SIL') {
+            setSettingsError('Onay metnini tam olarak HESABIMI SIL yazmalisiniz.');
+            setSettingsMessage('');
+            return;
+        }
+
+        if (!window.confirm('Hesap silme talebi olusturulacak. Devam etmek istiyor musunuz?')) {
+            return;
+        }
+
+        setSettingsDeleting(true);
+        setSettingsError('');
+        setSettingsMessage('');
+        try {
+            const response = await profile.requestDeletion(currentPassword, confirmText);
+            const message = response?.data?.message || 'Silme talebiniz alindi.';
+            setSettingsMessage(message);
+            setSettingsDeletePassword('');
+            setSettingsDeleteConfirm('');
+            if (typeof onDeletionCompleted === 'function') {
+                await onDeletionCompleted(message);
+            }
+        } catch (error) {
+            setSettingsError(error?.response?.data?.error || 'Hesap silme talebi olusturulamadi.');
+        } finally {
+            setSettingsDeleting(false);
         }
     };
 
@@ -527,6 +572,36 @@ const HomeScreen = ({
                             <div className="settings-actions">
                                 <button type="submit" className="btn-solid-purple" disabled={settingsSavingPassword}>
                                     {settingsSavingPassword ? 'Guncelleniyor...' : 'Sifreyi Degistir'}
+                                </button>
+                            </div>
+                        </form>
+
+                        <form className="settings-section" onSubmit={handleSettingsDeleteAccount}>
+                            <h4>Hesap Silme</h4>
+                            <label htmlFor="settings-delete-password">Mevcut Sifre</label>
+                            <input
+                                id="settings-delete-password"
+                                className="input-glass"
+                                type={settingsShowPassword ? 'text' : 'password'}
+                                value={settingsDeletePassword}
+                                onChange={(event) => setSettingsDeletePassword(event.target.value)}
+                                disabled={settingsDeleting}
+                            />
+                            <label htmlFor="settings-delete-confirm">Onay Metni</label>
+                            <input
+                                id="settings-delete-confirm"
+                                className="input-glass"
+                                value={settingsDeleteConfirm}
+                                onChange={(event) => setSettingsDeleteConfirm(event.target.value)}
+                                placeholder="HESABIMI SIL"
+                                disabled={settingsDeleting}
+                            />
+                            <div className="settings-delete-note">
+                                Hesap silme talebi olusturulduktan sonra hesap beklemeye alinir ve oturumunuz kapatilir.
+                            </div>
+                            <div className="settings-actions">
+                                <button type="submit" className="settings-delete-btn" disabled={settingsDeleting}>
+                                    {settingsDeleting ? 'Isleniyor...' : 'Hesabimi Sil'}
                                 </button>
                             </div>
                         </form>
