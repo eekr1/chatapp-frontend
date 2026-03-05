@@ -37,7 +37,9 @@ const messagesTr = {
     },
     home: {
         anonymous: 'ANONIM',
+        anonymousNote: 'Mesajlar gecici, fotograf yok.',
         friends: 'ARKADASLAR',
+        friendsNote: 'Gecmis ve fotograf sadece arkadas sohbetinde.',
         logout: 'Cikis',
         settingsTitle: 'Ayarlar',
         reportIssue: 'Sorun Bildir',
@@ -149,6 +151,8 @@ const messagesTr = {
         camera: 'Kamera',
         gallery: 'Galeri',
         mediaSelect: 'Medya sec',
+        modeHintAnonymous: 'Anon mod: mesajlar gecici, fotograf kapali.',
+        modeHintFriend: 'Arkadas modu: mesaj gecmisi ve fotograf acik.',
         writeMessage: 'Bir seyler yaz...'
     },
     match: {

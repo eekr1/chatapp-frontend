@@ -37,7 +37,9 @@ const messagesEn = {
     },
     home: {
         anonymous: 'ANONYMOUS',
+        anonymousNote: 'Temporary messages, no photos.',
         friends: 'FRIENDS',
+        friendsNote: 'History and photos are for friend chats only.',
         logout: 'Logout',
         settingsTitle: 'Settings',
         reportIssue: 'Report Issue',
@@ -149,6 +151,8 @@ const messagesEn = {
         camera: 'Camera',
         gallery: 'Gallery',
         mediaSelect: 'Select media',
+        modeHintAnonymous: 'Anonymous mode: temporary messages, photos disabled.',
+        modeHintFriend: 'Friend mode: message history and photos enabled.',
         writeMessage: 'Type something...'
     },
     match: {
