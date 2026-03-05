@@ -4,6 +4,7 @@ import {
     pickImageFromCamera,
     pickImageFromGallery
 } from '../utils/nativeBridge';
+import { useI18n } from '../i18n';
 
 const SendIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -25,7 +26,7 @@ const getAvatarInitial = (name) => {
     const normalized = String(name || '').trim();
     if (!normalized) return '?';
     const chars = Array.from(normalized);
-    return (chars[0] || '?').toLocaleUpperCase('tr-TR');
+    return (chars[0] || '?').toLocaleUpperCase();
 };
 
 const dataUrlToBytes = (dataUrl) => {
@@ -40,7 +41,7 @@ const dataUrlToBytes = (dataUrl) => {
 const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-    reader.onerror = () => reject(new Error('Dosya okunamadi.'));
+    reader.onerror = () => reject(new Error('FILE_READ_FAILED'));
     reader.readAsDataURL(file);
 });
 
@@ -62,6 +63,7 @@ const ChatScreen = ({
     imageViewer,
     onAddFriend,
 }) => {
+    const { t } = useI18n();
     const [inputValue, setInputValue] = useState('');
     const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
     const [imageError, setImageError] = useState('');
@@ -71,7 +73,7 @@ const ChatScreen = ({
     const galleryInputRef = useRef(null);
     const mediaMenuRef = useRef(null);
 
-    const displayName = peerName || randomName || 'Anonim';
+    const displayName = peerName || randomName || t('chat.anonymous');
     const avatarInitial = getAvatarInitial(displayName);
 
     useEffect(() => {
@@ -111,13 +113,13 @@ const ChatScreen = ({
 
     const submitImageDataUrl = (dataUrl, explicitBytes = null) => {
         if (!onSendImage || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
-            setImageError('Gecersiz gorsel secimi.');
+            setImageError(t('chat.invalidImage'));
             return;
         }
 
         const sizeBytes = explicitBytes ?? dataUrlToBytes(dataUrl);
         if (sizeBytes > MAX_IMAGE_BYTES) {
-            setImageError('Gorsel boyutu en fazla 2MB olabilir.');
+            setImageError(t('chat.imageTooLarge'));
             return;
         }
 
@@ -148,7 +150,7 @@ const ChatScreen = ({
         if (!file) return;
 
         if (file.size > MAX_IMAGE_BYTES) {
-            setImageError('Gorsel boyutu en fazla 2MB olabilir.');
+            setImageError(t('chat.imageTooLarge'));
             return;
         }
 
@@ -156,7 +158,7 @@ const ChatScreen = ({
             const dataUrl = await readFileAsDataUrl(file);
             submitImageDataUrl(dataUrl, file.size);
         } catch (e) {
-            setImageError(e?.message || 'Gorsel okunamadi.');
+            setImageError(e?.message === 'FILE_READ_FAILED' ? t('chat.fileReadFailed') : (e?.message || t('chat.fileReadFailed')));
         }
     };
 
@@ -183,22 +185,22 @@ const ChatScreen = ({
                     <div>
                         <h3 style={{ fontSize: '1rem', color: isFriendMode ? 'var(--accent)' : 'var(--primary)' }}>{displayName}</h3>
                         <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>
-                            {isChatEnded ? 'Sonlandi' : 'Online'}
+                            {isChatEnded ? t('chat.ended') : t('common.online')}
                         </span>
                     </div>
                 </div>
 
                 <div className="chat-header-actions">
                     {!isFriendMode && onAddFriend && (
-                        <button onClick={onAddFriend} title="Arkadas Ekle" className="chat-add-friend-btn">
-                            + Arkadas
+                        <button onClick={onAddFriend} title={t('chat.addFriend')} className="chat-add-friend-btn">
+                            {t('chat.addFriend')}
                         </button>
                     )}
-                    <button onClick={onReport} title="Raporla" className="chat-report-btn">
+                    <button onClick={onReport} title={t('chat.report')} className="chat-report-btn">
                         !
                     </button>
                     <button onClick={onLeave} className="chat-leave-btn">
-                        x
+                        {t('chat.leave')}
                     </button>
                 </div>
             </div>
@@ -217,13 +219,13 @@ const ChatScreen = ({
                             {m.msgType === 'image' ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     {m.mediaExpired ? (
-                                        <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>Fotograf acildi</span>
+                                        <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>{t('chat.photoOpened')}</span>
                                     ) : (
                                         m.from === 'me' ? (
-                                            <span style={{ fontStyle: 'italic', fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)' }}>Fotograf gonderildi</span>
+                                            <span style={{ fontStyle: 'italic', fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)' }}>{t('chat.photoSent')}</span>
                                         ) : (
                                             <button className="btn-neon-sm" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={() => onViewImage && onViewImage(m.mediaId)}>
-                                                Fotografi Goruntule
+                                                {t('chat.viewPhoto')}
                                             </button>
                                         )
                                     )}
@@ -232,10 +234,10 @@ const ChatScreen = ({
                                 m.text
                             )}
                             {m.from === 'me' && m.sendState === 'pending' && (
-                                <span style={{ fontSize: '0.72rem', opacity: 0.75 }}>Gonderiliyor...</span>
+                                <span style={{ fontSize: '0.72rem', opacity: 0.75 }}>{t('chat.sending')}</span>
                             )}
                             {m.from === 'me' && m.sendState === 'failed' && (
-                                <span style={{ fontSize: '0.72rem', color: 'var(--danger)' }}>Gonderilemedi</span>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--danger)' }}>{t('chat.sendFailed')}</span>
                             )}
                         </div>
                     </div>
@@ -266,13 +268,13 @@ const ChatScreen = ({
                     alignItems: 'center',
                     gap: 15
                 }}>
-                    <h3 style={{ color: 'var(--danger)', fontSize: '1.2rem' }}>Sohbet Sonlandi</h3>
+                    <h3 style={{ color: 'var(--danger)', fontSize: '1.2rem' }}>{t('chat.chatEndedTitle')}</h3>
                     <div style={{ display: 'flex', gap: 15, width: '100%' }}>
                         <button onClick={onLeave} className="btn-neon" style={{ flex: 1, borderColor: 'var(--text-dim)', color: 'var(--text-dim)' }}>
-                            {isFriendMode ? 'Arkadaslara Don' : 'Ana Sayfa'}
+                            {isFriendMode ? t('chat.backToFriends') : t('chat.backToHome')}
                         </button>
                         <button onClick={onNewMatch} className="btn-solid-purple" style={{ flex: 1 }}>
-                            Yeni Eslesme
+                            {t('chat.newMatch')}
                         </button>
                     </div>
                 </div>
@@ -299,25 +301,25 @@ const ChatScreen = ({
                     {imageViewer.status === 'loading' && (
                         <div className="center-flex" style={{ gap: 12, padding: 20 }}>
                             <div className="animate-pulse" style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--primary)', boxShadow: 'var(--glow-cyan)' }} />
-                            <p style={{ color: '#fff' }}>Fotograf yukleniyor...</p>
+                            <p style={{ color: '#fff' }}>{t('chat.photoLoading')}</p>
                         </div>
                     )}
 
                     {imageViewer.status === 'error' && (
                         <div className="center-flex" style={{ gap: 12, padding: 20, textAlign: 'center' }}>
-                            <p style={{ color: 'var(--danger)', fontWeight: 700 }}>Fotograf acilamadi</p>
-                            <p style={{ color: '#fff', opacity: 0.85, maxWidth: 320 }}>{imageViewer.error || 'Bilinmeyen hata.'}</p>
+                            <p style={{ color: 'var(--danger)', fontWeight: 700 }}>{t('chat.photoOpenFailed')}</p>
+                            <p style={{ color: '#fff', opacity: 0.85, maxWidth: 320 }}>{imageViewer.error || t('chat.unknownError')}</p>
                             {imageViewer.mediaId && (
                                 <button onClick={() => onRetryViewImage ? onRetryViewImage(imageViewer.mediaId) : onViewImage?.(imageViewer.mediaId)} className="btn-neon" style={{ marginTop: 6 }}>
-                                    Tekrar Dene
+                                    {t('chat.retry')}
                                 </button>
                             )}
                         </div>
                     )}
 
-                    <p style={{ color: '#fff', marginTop: 20 }}>Bu fotograf kapatildiginda silinecektir.</p>
+                    <p style={{ color: '#fff', marginTop: 20 }}>{t('chat.photoWillDelete')}</p>
                     <button onClick={() => { if (onCloseImage) onCloseImage(); }} className="btn-solid-purple" style={{ marginTop: 20 }}>
-                        Kapat
+                        {t('common.close')}
                     </button>
                 </div>
             )}
@@ -338,10 +340,10 @@ const ChatScreen = ({
                                 {mediaMenuOpen && (
                                     <div className="chat-media-menu">
                                         <button type="button" className="chat-media-menu-item" onClick={() => handleNativeSelection('camera')}>
-                                            Kamera
+                                            {t('chat.camera')}
                                         </button>
                                         <button type="button" className="chat-media-menu-item" onClick={() => handleNativeSelection('gallery')}>
-                                            Galeri
+                                            {t('chat.gallery')}
                                         </button>
                                     </div>
                                 )}
@@ -364,7 +366,7 @@ const ChatScreen = ({
                                     type="button"
                                     className="chat-camera-btn"
                                     onClick={() => setMediaMenuOpen((prev) => !prev)}
-                                    aria-label="Medya sec"
+                                    aria-label={t('chat.mediaSelect')}
                                 >
                                     <CameraIcon />
                                 </button>
@@ -375,7 +377,7 @@ const ChatScreen = ({
                             <input
                                 className="input-glass"
                                 style={{ flex: 1, border: 'none', padding: '10px 0', background: 'transparent' }}
-                                placeholder="Bir seyler yaz..."
+                                placeholder={t('chat.writeMessage')}
                                 value={inputValue}
                                 onChange={handleInput}
                             />

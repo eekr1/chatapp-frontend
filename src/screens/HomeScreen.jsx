@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
-import { profile } from '../api';
+import { getLocalizedApiError, profile } from '../api';
+import { useI18n } from '../i18n';
 
 const SUPPORT_SUBJECTS = [
-    { value: 'connection', label: 'Baglanti' },
-    { value: 'message', label: 'Mesaj' },
-    { value: 'photo', label: 'Foto' },
-    { value: 'other', label: 'Diger' }
+    { value: 'connection', labelKey: 'support.subject.connection' },
+    { value: 'message', labelKey: 'support.subject.message' },
+    { value: 'photo', labelKey: 'support.subject.photo' },
+    { value: 'other', labelKey: 'support.subject.other' }
 ];
 const MAX_MEDIA_FILES = 3;
 const MAX_MEDIA_FILE_BYTES = 8 * 1024 * 1024;
@@ -44,6 +45,8 @@ const HomeScreen = ({
     currentUser,
     onUpdateUser,
     onDeletionCompleted,
+    onLocaleChange,
+    currentLocale = 'en',
     onSelectMode,
     onlineCount,
     unreadCount = 0,
@@ -52,6 +55,7 @@ const HomeScreen = ({
     supportSubmitting = false,
     legalFooter = DEFAULT_LEGAL_FOOTER
 }) => {
+    const { t } = useI18n();
     const footer = { ...DEFAULT_LEGAL_FOOTER, ...(legalFooter || {}) };
     const [supportOpen, setSupportOpen] = useState(false);
     const [supportSubject, setSupportSubject] = useState('connection');
@@ -71,6 +75,7 @@ const HomeScreen = ({
     const [settingsDeleteConfirm, setSettingsDeleteConfirm] = useState('');
     const [settingsMessage, setSettingsMessage] = useState('');
     const [settingsError, setSettingsError] = useState('');
+    const [settingsLocale, setSettingsLocale] = useState(currentLocale);
 
     const resetSupportForm = () => {
         setSupportSubject('connection');
@@ -96,6 +101,7 @@ const HomeScreen = ({
         setSettingsCurrentPassword('');
         setSettingsNewPassword('');
         setSettingsShowPassword(false);
+        setSettingsLocale(currentLocale || 'en');
         setSettingsDeletePassword('');
         setSettingsDeleteConfirm('');
         setSettingsMessage('');
@@ -114,7 +120,7 @@ const HomeScreen = ({
         event.preventDefault();
         const nextDisplayName = String(settingsDisplayName || '').trim();
         if (!nextDisplayName) {
-            setSettingsError('Gorunen isim bos olamaz.');
+            setSettingsError(t('home.displayNameEmpty'));
             setSettingsMessage('');
             return;
         }
@@ -130,9 +136,9 @@ const HomeScreen = ({
                     return { ...prev, display_name: nextDisplayName };
                 });
             }
-            setSettingsMessage('Gorunen isim guncellendi.');
+            setSettingsMessage(t('home.displayNameUpdated'));
         } catch (error) {
-            setSettingsError(error?.response?.data?.error || 'Gorunen isim guncellenemedi.');
+            setSettingsError(getLocalizedApiError(t, error, 'home.displayNameUpdateFailed'));
         } finally {
             setSettingsSavingProfile(false);
         }
@@ -144,17 +150,17 @@ const HomeScreen = ({
         const confirmText = String(settingsDeleteConfirm || '').trim();
 
         if (!currentPassword) {
-            setSettingsError('Hesap silme icin mevcut sifre gerekli.');
+            setSettingsError(t('home.deletePasswordRequired'));
             setSettingsMessage('');
             return;
         }
         if (confirmText !== 'HESABIMI SIL') {
-            setSettingsError('Onay metnini tam olarak HESABIMI SIL yazmalisiniz.');
+            setSettingsError(t('home.deleteConfirmRequired'));
             setSettingsMessage('');
             return;
         }
 
-        if (!window.confirm('Hesap silme talebi olusturulacak. Devam etmek istiyor musunuz?')) {
+        if (!window.confirm(t('home.deleteConfirmPrompt'))) {
             return;
         }
 
@@ -163,7 +169,7 @@ const HomeScreen = ({
         setSettingsMessage('');
         try {
             const response = await profile.requestDeletion(currentPassword, confirmText);
-            const message = response?.data?.message || 'Silme talebiniz alindi.';
+            const message = response?.data?.message || t('home.deleteRequestSubmitted');
             setSettingsMessage(message);
             setSettingsDeletePassword('');
             setSettingsDeleteConfirm('');
@@ -171,7 +177,7 @@ const HomeScreen = ({
                 await onDeletionCompleted(message);
             }
         } catch (error) {
-            setSettingsError(error?.response?.data?.error || 'Hesap silme talebi olusturulamadi.');
+            setSettingsError(getLocalizedApiError(t, error, 'home.deleteRequestFailed'));
         } finally {
             setSettingsDeleting(false);
         }
@@ -183,12 +189,12 @@ const HomeScreen = ({
         const newPassword = String(settingsNewPassword || '');
 
         if (!currentPassword || !newPassword) {
-            setSettingsError('Mevcut sifre ve yeni sifre gerekli.');
+            setSettingsError(t('home.passwordRequired'));
             setSettingsMessage('');
             return;
         }
         if (newPassword.length < 6) {
-            setSettingsError('Yeni sifre en az 6 karakter olmali.');
+            setSettingsError(t('home.passwordMinLength'));
             setSettingsMessage('');
             return;
         }
@@ -201,9 +207,9 @@ const HomeScreen = ({
             setSettingsCurrentPassword('');
             setSettingsNewPassword('');
             setSettingsShowPassword(false);
-            setSettingsMessage(response?.data?.message || 'Sifre guncellendi.');
+            setSettingsMessage(response?.data?.message || t('home.passwordUpdated'));
         } catch (error) {
-            setSettingsError(error?.response?.data?.error || 'Sifre guncellenemedi.');
+            setSettingsError(getLocalizedApiError(t, error, 'home.passwordUpdateFailed'));
         } finally {
             setSettingsSavingPassword(false);
         }
@@ -216,7 +222,7 @@ const HomeScreen = ({
 
         const merged = [...supportMediaFiles, ...selected].slice(0, MAX_MEDIA_FILES);
         if (supportMediaFiles.length + selected.length > MAX_MEDIA_FILES) {
-            setSupportError(`En fazla ${MAX_MEDIA_FILES} medya dosyasi ekleyebilirsiniz.`);
+            setSupportError(t('home.mediaLimitError', { count: MAX_MEDIA_FILES }));
             return;
         }
 
@@ -224,17 +230,17 @@ const HomeScreen = ({
         for (const file of merged) {
             totalBytes += Number(file.size) || 0;
             if ((Number(file.size) || 0) > MAX_MEDIA_FILE_BYTES) {
-                setSupportError(`Tek dosya boyutu en fazla ${Math.round(MAX_MEDIA_FILE_BYTES / (1024 * 1024))} MB olabilir.`);
+                setSupportError(t('home.mediaFileSizeError', { mb: Math.round(MAX_MEDIA_FILE_BYTES / (1024 * 1024)) }));
                 return;
             }
             if (file.type && !/^(image|video)\//i.test(file.type)) {
-                setSupportError('Sadece foto veya video yukleyebilirsiniz.');
+                setSupportError(t('home.mediaTypeError'));
                 return;
             }
         }
 
         if (totalBytes > MAX_MEDIA_TOTAL_BYTES) {
-            setSupportError(`Toplam medya boyutu en fazla ${Math.round(MAX_MEDIA_TOTAL_BYTES / (1024 * 1024))} MB olabilir.`);
+            setSupportError(t('home.mediaTotalSizeError', { mb: Math.round(MAX_MEDIA_TOTAL_BYTES / (1024 * 1024)) }));
             return;
         }
 
@@ -252,17 +258,17 @@ const HomeScreen = ({
         const email = supportEmail.trim();
 
         if (description.length < 10) {
-            setSupportError('Aciklama en az 10 karakter olmali.');
+            setSupportError(t('home.supportMinDescription'));
             return;
         }
 
         if (email && !isEmailValid(email)) {
-            setSupportError('E-posta formati gecersiz.');
+            setSupportError(t('home.supportEmailInvalid'));
             return;
         }
 
         if (typeof onSupportSubmit !== 'function') {
-            setSupportError('Destek servisi su an kullanilamiyor.');
+            setSupportError(t('home.supportUnavailable'));
             return;
         }
 
@@ -280,7 +286,19 @@ const HomeScreen = ({
             return;
         }
 
-        setSupportError(result?.error || 'Sorun bildirimi gonderilemedi.');
+        setSupportError(result?.error || t('home.supportFailed'));
+    };
+
+    const handleLocaleSave = async (event) => {
+        event.preventDefault();
+        if (typeof onLocaleChange !== 'function') return;
+        try {
+            await onLocaleChange(settingsLocale);
+            setSettingsMessage(t('home.languageUpdated'));
+            setSettingsError('');
+        } catch (error) {
+            setSettingsError(getLocalizedApiError(t, error, 'common.error'));
+        }
     };
 
     return (
@@ -299,7 +317,7 @@ const HomeScreen = ({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ width: 8, height: 8, background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 5px var(--success)' }} />
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontFamily: 'var(--font-display)' }}>
-                            {onlineCount} Online
+                            {onlineCount} {t('common.online')}
                         </span>
                     </div>
                     <div className="home-header-actions">
@@ -307,17 +325,17 @@ const HomeScreen = ({
                             <button
                                 onClick={onLogout}
                                 className="btn-neon home-header-btn"
-                                title="Cikis Yap"
+                                title={t('home.logout')}
                             >
-                                Cikis
+                                {t('home.logout')}
                             </button>
                         )}
                         <button
                             onClick={openSettingsModal}
                             className="btn-neon home-header-btn home-settings-btn"
-                            title="Ayarlar"
+                            title={t('home.settingsTitle')}
                         >
-                            Ayarlar
+                            {t('home.settingsTitle')}
                         </button>
                     </div>
                 </div>
@@ -341,7 +359,7 @@ const HomeScreen = ({
                     }}>
                         <MaskIcon />
                     </GlassCard>
-                    <h3 style={{ fontSize: '1.2rem', color: 'var(--primary)', letterSpacing: 1 }}>ANONIM</h3>
+                    <h3 style={{ fontSize: '1.2rem', color: 'var(--primary)', letterSpacing: 1 }}>{t('home.anonymous')}</h3>
                 </div>
 
                 <div style={{ width: 50, height: 1, background: 'var(--glass-border)' }} />
@@ -383,13 +401,13 @@ const HomeScreen = ({
                             </div>
                         )}
                     </GlassCard>
-                    <h3 style={{ fontSize: '1.2rem', color: 'var(--accent)', letterSpacing: 1 }}>ARKADASLAR</h3>
+                    <h3 style={{ fontSize: '1.2rem', color: 'var(--accent)', letterSpacing: 1 }}>{t('home.friends')}</h3>
                 </div>
             </main>
 
             <footer className="center-flex home-footer">
                 <p className="home-tagline">{footer.tagline}</p>
-                <nav className="home-legal-links" aria-label="Yasal linkler">
+                <nav className="home-legal-links" aria-label={t('home.legalLinksAria')}>
                     <a
                         href={footer.privacyUrl}
                         className="home-legal-link"
@@ -397,7 +415,7 @@ const HomeScreen = ({
                     >
                         {footer.privacyLabel}
                     </a>
-                    <span className="home-legal-separator">•</span>
+                    <span className="home-legal-separator">&middot;</span>
                     <a
                         href={footer.termsUrl}
                         className="home-legal-link"
@@ -412,22 +430,22 @@ const HomeScreen = ({
                 type="button"
                 className="support-fab"
                 onClick={openSupportModal}
-                aria-label="Sorun bildir"
+                aria-label={t('home.reportIssue')}
             >
                 !
-                <span>Sorun Bildir</span>
+                <span>{t('home.reportIssue')}</span>
             </button>
 
             {supportOpen && (
                 <div className="support-modal-overlay" onClick={closeSupportModal}>
                     <div className="support-modal-card glass-card" onClick={(event) => event.stopPropagation()}>
                         <div className="support-modal-header">
-                            <h3>Sorun Bildir</h3>
-                            <button type="button" className="support-close-btn" onClick={closeSupportModal} aria-label="Kapat">x</button>
+                            <h3>{t('home.supportTitle')}</h3>
+                            <button type="button" className="support-close-btn" onClick={closeSupportModal} aria-label={t('common.close')}>x</button>
                         </div>
 
                         <form className="support-form" onSubmit={handleSupportSubmit}>
-                            <label htmlFor="support-subject">Konu</label>
+                            <label htmlFor="support-subject">{t('home.supportSubject')}</label>
                             <select
                                 id="support-subject"
                                 className="support-select input-glass"
@@ -436,35 +454,35 @@ const HomeScreen = ({
                                 disabled={supportSubmitting}
                             >
                                 {SUPPORT_SUBJECTS.map((item) => (
-                                    <option key={item.value} value={item.value}>{item.label}</option>
+                                    <option key={item.value} value={item.value}>{t(item.labelKey, {}, item.value)}</option>
                                 ))}
                             </select>
 
-                            <label htmlFor="support-description">Aciklama</label>
+                            <label htmlFor="support-description">{t('home.supportDescription')}</label>
                             <textarea
                                 id="support-description"
                                 className="support-textarea input-glass"
                                 value={supportDescription}
                                 onChange={(event) => setSupportDescription(event.target.value)}
-                                placeholder="Sorunu adim adim aciklayin..."
+                                placeholder={t('home.supportDescriptionPlaceholder')}
                                 maxLength={2000}
                                 disabled={supportSubmitting}
                             />
                             <div className="support-counter">{supportDescription.trim().length}/2000</div>
 
-                            <label htmlFor="support-email">E-posta (opsiyonel)</label>
+                            <label htmlFor="support-email">{t('home.supportEmail')}</label>
                             <input
                                 id="support-email"
                                 type="email"
                                 className="input-glass"
                                 value={supportEmail}
                                 onChange={(event) => setSupportEmail(event.target.value)}
-                                placeholder="size-donus@example.com"
+                                placeholder={t('home.supportEmailPlaceholder')}
                                 maxLength={254}
                                 disabled={supportSubmitting}
                             />
 
-                            <label htmlFor="support-media">Medya (opsiyonel, foto/video)</label>
+                            <label htmlFor="support-media">{t('home.supportMedia')}</label>
                             <input
                                 id="support-media"
                                 type="file"
@@ -479,24 +497,24 @@ const HomeScreen = ({
                                     {supportMediaFiles.map((file, index) => (
                                         <div key={`${file.name}-${index}`} className="support-media-item">
                                             <span>{file.name} ({(Number(file.size || 0) / 1024 / 1024).toFixed(2)} MB)</span>
-                                            <button type="button" onClick={() => removeMediaFile(index)} disabled={supportSubmitting}>Kaldir</button>
+                                            <button type="button" onClick={() => removeMediaFile(index)} disabled={supportSubmitting}>{t('common.delete')}</button>
                                         </div>
                                     ))}
                                 </div>
                             )}
 
                             <div className="support-auto-meta">
-                                Otomatik eklenecek: app version, platform, cihaz modeli, saat, network tipi, son hata kodu.
+                                {t('home.supportAutoMeta')}
                             </div>
 
                             {supportError && <div className="support-error">{supportError}</div>}
 
                             <div className="support-actions">
                                 <button type="button" className="btn-neon" onClick={closeSupportModal} disabled={supportSubmitting}>
-                                    Vazgec
+                                    {t('home.supportCancel')}
                                 </button>
                                 <button type="submit" className="btn-solid-purple" disabled={supportSubmitting}>
-                                    {supportSubmitting ? 'Gonderiliyor...' : 'Gonder'}
+                                    {supportSubmitting ? t('home.supportSending') : t('home.supportSubmit')}
                                 </button>
                             </div>
                         </form>
@@ -508,13 +526,13 @@ const HomeScreen = ({
                 <div className="support-modal-overlay" onClick={closeSettingsModal}>
                     <div className="settings-modal-card glass-card" onClick={(event) => event.stopPropagation()}>
                         <div className="support-modal-header">
-                            <h3>Ayarlar</h3>
-                            <button type="button" className="support-close-btn" onClick={closeSettingsModal} aria-label="Kapat">x</button>
+                            <h3>{t('home.settingsTitle')}</h3>
+                            <button type="button" className="support-close-btn" onClick={closeSettingsModal} aria-label={t('common.close')}>x</button>
                         </div>
 
                         <div className="settings-section">
-                            <h4>Hesap Bilgileri</h4>
-                            <label htmlFor="settings-username">Kullanici Adi</label>
+                            <h4>{t('home.settingsAccountInfo')}</h4>
+                            <label htmlFor="settings-username">{t('home.settingsUsername')}</label>
                             <input
                                 id="settings-username"
                                 className="input-glass settings-readonly"
@@ -523,9 +541,26 @@ const HomeScreen = ({
                             />
                         </div>
 
+                        <form className="settings-section" onSubmit={handleLocaleSave}>
+                            <h4>{t('home.languageTitle')}</h4>
+                            <label htmlFor="settings-locale">{t('home.languageLabel')}</label>
+                            <select
+                                id="settings-locale"
+                                className="input-glass support-select"
+                                value={settingsLocale}
+                                onChange={(event) => setSettingsLocale(event.target.value)}
+                            >
+                                <option value="tr">{t('home.languageTr')}</option>
+                                <option value="en">{t('home.languageEn')}</option>
+                            </select>
+                            <div className="settings-actions">
+                                <button type="submit" className="btn-solid-purple">{t('common.save')}</button>
+                            </div>
+                        </form>
+
                         <form className="settings-section" onSubmit={handleSettingsProfileSave}>
-                            <h4>Gorunen Isim</h4>
-                            <label htmlFor="settings-display-name">Gorunen Isim</label>
+                            <h4>{t('home.settingsDisplayNameTitle')}</h4>
+                            <label htmlFor="settings-display-name">{t('home.settingsDisplayName')}</label>
                             <input
                                 id="settings-display-name"
                                 className="input-glass"
@@ -536,14 +571,14 @@ const HomeScreen = ({
                             />
                             <div className="settings-actions">
                                 <button type="submit" className="btn-solid-purple" disabled={settingsSavingProfile}>
-                                    {settingsSavingProfile ? 'Kaydediliyor...' : 'Kaydet'}
+                                    {settingsSavingProfile ? t('home.settingsSaving') : t('home.settingsSave')}
                                 </button>
                             </div>
                         </form>
 
                         <form className="settings-section" onSubmit={handleSettingsPasswordSave}>
-                            <h4>Sifre Degistir</h4>
-                            <label htmlFor="settings-current-password">Mevcut Sifre</label>
+                            <h4>{t('home.settingsPasswordTitle')}</h4>
+                            <label htmlFor="settings-current-password">{t('home.settingsCurrentPassword')}</label>
                             <input
                                 id="settings-current-password"
                                 className="input-glass"
@@ -552,7 +587,7 @@ const HomeScreen = ({
                                 onChange={(event) => setSettingsCurrentPassword(event.target.value)}
                                 disabled={settingsSavingPassword}
                             />
-                            <label htmlFor="settings-new-password">Yeni Sifre</label>
+                            <label htmlFor="settings-new-password">{t('home.settingsNewPassword')}</label>
                             <input
                                 id="settings-new-password"
                                 className="input-glass"
@@ -567,18 +602,18 @@ const HomeScreen = ({
                                 onClick={() => setSettingsShowPassword((prev) => !prev)}
                                 disabled={settingsSavingPassword}
                             >
-                                {settingsShowPassword ? 'Sifreyi Gizle' : 'Sifreyi Goster'}
+                                {settingsShowPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                             </button>
                             <div className="settings-actions">
                                 <button type="submit" className="btn-solid-purple" disabled={settingsSavingPassword}>
-                                    {settingsSavingPassword ? 'Guncelleniyor...' : 'Sifreyi Degistir'}
+                                    {settingsSavingPassword ? t('home.settingsUpdating') : t('home.settingsChangePassword')}
                                 </button>
                             </div>
                         </form>
 
                         <form className="settings-section" onSubmit={handleSettingsDeleteAccount}>
-                            <h4>Hesap Silme</h4>
-                            <label htmlFor="settings-delete-password">Mevcut Sifre</label>
+                            <h4>{t('home.settingsDeleteTitle')}</h4>
+                            <label htmlFor="settings-delete-password">{t('home.settingsCurrentPassword')}</label>
                             <input
                                 id="settings-delete-password"
                                 className="input-glass"
@@ -587,21 +622,21 @@ const HomeScreen = ({
                                 onChange={(event) => setSettingsDeletePassword(event.target.value)}
                                 disabled={settingsDeleting}
                             />
-                            <label htmlFor="settings-delete-confirm">Onay Metni</label>
+                            <label htmlFor="settings-delete-confirm">{t('home.settingsConfirmText')}</label>
                             <input
                                 id="settings-delete-confirm"
                                 className="input-glass"
                                 value={settingsDeleteConfirm}
                                 onChange={(event) => setSettingsDeleteConfirm(event.target.value)}
-                                placeholder="HESABIMI SIL"
+                                placeholder={t('home.settingsConfirmPlaceholder')}
                                 disabled={settingsDeleting}
                             />
                             <div className="settings-delete-note">
-                                Hesap silme talebi olusturulduktan sonra hesap beklemeye alinir ve oturumunuz kapatilir.
+                                {t('home.settingsDeleteNote')}
                             </div>
                             <div className="settings-actions">
                                 <button type="submit" className="settings-delete-btn" disabled={settingsDeleting}>
-                                    {settingsDeleting ? 'Isleniyor...' : 'Hesabimi Sil'}
+                                    {settingsDeleting ? t('home.settingsWorking') : t('home.settingsDeleteAccount')}
                                 </button>
                             </div>
                         </form>

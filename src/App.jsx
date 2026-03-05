@@ -7,9 +7,11 @@ import {
   push as pushApi,
   support as supportApi,
   legal as legalApi,
+  getLocalizedApiError,
   getLastErrorCode,
   setLastErrorCode
 } from './api';
+import { resolveLocale, toSupportedLocale, useI18n } from './i18n';
 import Auth from './components/Auth';
 
 import SplashScreen from './screens/SplashScreen';
@@ -205,11 +207,20 @@ const LEGAL_ROUTE_KIND = Object.freeze({
 
 const DEFAULT_LEGAL_CONTENT = Object.freeze({
   footer: Object.freeze({
-    tagline: 'Kimligini gizle, ozgurce konus.',
-    privacyLabel: 'Gizlilik Politikasi',
-    privacyUrl: '/privacy-policy',
-    termsLabel: 'Kullanim Sartlari',
-    termsUrl: '/terms-of-use'
+    urls: Object.freeze({
+      privacy: '/privacy-policy',
+      terms: '/terms-of-use'
+    }),
+    tr: Object.freeze({
+      tagline: 'Kimligini gizle, ozgurce konus.',
+      privacyLabel: 'Gizlilik Politikasi',
+      termsLabel: 'Kullanim Sartlari'
+    }),
+    en: Object.freeze({
+      tagline: 'Hide your identity, speak freely.',
+      privacyLabel: 'Privacy Policy',
+      termsLabel: 'Terms of Use'
+    })
   }),
   versions: Object.freeze({
     terms: 'v1',
@@ -241,6 +252,21 @@ const DEFAULT_LEGAL_CONTENT = Object.freeze({
 
 const cloneLegalContent = () => JSON.parse(JSON.stringify(DEFAULT_LEGAL_CONTENT));
 
+const normalizeLegalFooterLocale = (value, fallback) => {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    tagline: typeof source.tagline === 'string' && source.tagline.trim()
+      ? source.tagline.trim()
+      : fallback.tagline,
+    privacyLabel: typeof source.privacyLabel === 'string' && source.privacyLabel.trim()
+      ? source.privacyLabel.trim()
+      : fallback.privacyLabel,
+    termsLabel: typeof source.termsLabel === 'string' && source.termsLabel.trim()
+      ? source.termsLabel.trim()
+      : fallback.termsLabel
+  };
+};
+
 const normalizePathname = (value = '/') => {
   const raw = String(value || '/').trim() || '/';
   if (raw === '/') return '/';
@@ -270,23 +296,34 @@ const normalizeLegalContent = (value) => {
   const versionsSource = source.versions && typeof source.versions === 'object' ? source.versions : {};
   const docsSource = source.documents && typeof source.documents === 'object' ? source.documents : {};
 
+  const legacyTr = {
+    tagline: typeof footerSource.tagline === 'string' ? footerSource.tagline : defaults.footer.tr.tagline,
+    privacyLabel: typeof footerSource.privacyLabel === 'string' ? footerSource.privacyLabel : defaults.footer.tr.privacyLabel,
+    termsLabel: typeof footerSource.termsLabel === 'string' ? footerSource.termsLabel : defaults.footer.tr.termsLabel
+  };
+
   const normalized = {
     footer: {
-      tagline: typeof footerSource.tagline === 'string' && footerSource.tagline.trim()
-        ? footerSource.tagline.trim()
-        : defaults.footer.tagline,
-      privacyLabel: typeof footerSource.privacyLabel === 'string' && footerSource.privacyLabel.trim()
-        ? footerSource.privacyLabel.trim()
-        : defaults.footer.privacyLabel,
-      privacyUrl: typeof footerSource.privacyUrl === 'string' && footerSource.privacyUrl.trim()
-        ? footerSource.privacyUrl.trim()
-        : defaults.footer.privacyUrl,
-      termsLabel: typeof footerSource.termsLabel === 'string' && footerSource.termsLabel.trim()
-        ? footerSource.termsLabel.trim()
-        : defaults.footer.termsLabel,
-      termsUrl: typeof footerSource.termsUrl === 'string' && footerSource.termsUrl.trim()
-        ? footerSource.termsUrl.trim()
-        : defaults.footer.termsUrl
+      urls: {
+        privacy: typeof footerSource?.urls?.privacy === 'string' && footerSource.urls.privacy.trim()
+          ? footerSource.urls.privacy.trim()
+          : (typeof footerSource.privacyUrl === 'string' && footerSource.privacyUrl.trim()
+            ? footerSource.privacyUrl.trim()
+            : defaults.footer.urls.privacy),
+        terms: typeof footerSource?.urls?.terms === 'string' && footerSource.urls.terms.trim()
+          ? footerSource.urls.terms.trim()
+          : (typeof footerSource.termsUrl === 'string' && footerSource.termsUrl.trim()
+            ? footerSource.termsUrl.trim()
+            : defaults.footer.urls.terms)
+      },
+      tr: normalizeLegalFooterLocale(
+        footerSource.tr && typeof footerSource.tr === 'object' ? footerSource.tr : legacyTr,
+        defaults.footer.tr
+      ),
+      en: normalizeLegalFooterLocale(
+        footerSource.en && typeof footerSource.en === 'object' ? footerSource.en : null,
+        defaults.footer.en
+      )
     },
     versions: {
       terms: typeof versionsSource.terms === 'string' && versionsSource.terms.trim()
@@ -311,7 +348,25 @@ const normalizeLegalContent = (value) => {
   return normalized;
 };
 
+const getLegalFooterForLocale = (legalContent, localeValue) => {
+  const safeLocale = toSupportedLocale(localeValue, 'en');
+  const footer = legalContent?.footer || {};
+  const urls = footer.urls || {};
+  const localized = footer[safeLocale] || footer.en || footer.tr || {};
+
+  return {
+    tagline: localized.tagline || '',
+    privacyLabel: localized.privacyLabel || 'Privacy Policy',
+    privacyUrl: urls.privacy || '/privacy-policy',
+    termsLabel: localized.termsLabel || 'Terms of Use',
+    termsUrl: urls.terms || '/terms-of-use'
+  };
+};
+
 function App() {
+  const { t, locale, setLocale } = useI18n();
+  const appName = t('common.appName', {}, 'TalkX');
+  const activeLocale = toSupportedLocale(locale, 'en');
   const legalKind = resolveLegalKindFromPath();
   const [screen, setScreen] = useState('splash');
 
@@ -387,6 +442,11 @@ function App() {
   const activeFriendRef = useRef(activeFriend);
   const chatModeRef = useRef(chatMode);
   const screenRef = useRef(screen);
+
+  const localizedLegalFooter = useMemo(
+    () => getLegalFooterForLocale(legalContent, activeLocale),
+    [legalContent, activeLocale]
+  );
 
   useEffect(() => { activeFriendRef.current = activeFriend; }, [activeFriend]);
   useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
@@ -509,7 +569,7 @@ function App() {
       ...prev,
       {
         id,
-        title: title || 'TalkX',
+        title: title || appName,
         body: body || '',
         durationMs: safeDuration,
         closing: false
@@ -521,7 +581,7 @@ function App() {
     }, safeDuration);
 
     toastTimersRef.current.set(id, { hideTimer, removeTimer: null });
-  }, [startToastExit]);
+  }, [appName, startToastExit]);
 
   const dismissToast = useCallback((id) => {
     startToastExit(id);
@@ -632,21 +692,41 @@ function App() {
         }
       }));
       loadFriends();
-      showToast('TalkX', 'Sozlesme kabul edildi.', 3500);
+      showToast(appName, t('legal.acceptedToast'), 3500);
     } catch (error) {
       setLegalReaccept((prev) => ({
         ...prev,
         loading: false,
-        error: error?.response?.data?.error || 'Kabul islemi basarisiz. Tekrar deneyin.'
+        error: getLocalizedApiError(t, error, 'legal.acceptFailed')
       }));
     }
-  }, [legalReaccept?.required, loadFriends, showToast]);
+  }, [appName, legalReaccept?.required, loadFriends, showToast, t]);
+
+  const applyLocaleFromUser = useCallback(async (userPayload, { persistRemoteIfMissing = false } = {}) => {
+    const userLocale = toSupportedLocale(userPayload?.locale, null);
+    const nextLocale = userLocale || resolveLocale({ includeQuery: false });
+    setLocale(nextLocale, { persist: true });
+
+    if (persistRemoteIfMissing && userPayload?.id && !userLocale) {
+      try {
+        await profile.updateMe({ locale: nextLocale });
+      } catch (error) {
+        if (IS_DEV) console.warn('Locale profile sync skipped:', error?.message || error);
+      }
+    }
+
+    return nextLocale;
+  }, [setLocale]);
 
   const handleAuthLogin = useCallback(async (nextUser) => {
-    setUser(nextUser);
+    const resolvedLocale = await applyLocaleFromUser(nextUser, { persistRemoteIfMissing: true });
+    setUser({
+      ...nextUser,
+      locale: toSupportedLocale(nextUser?.locale, resolvedLocale)
+    });
     const requiresReaccept = await refreshLegalStatus();
     if (!requiresReaccept) loadFriends();
-  }, [loadFriends, refreshLegalStatus]);
+  }, [applyLocaleFromUser, loadFriends, refreshLegalStatus]);
 
   const checkAuth = useCallback(async () => {
     const token = localStorage.getItem('session_token');
@@ -654,13 +734,17 @@ function App() {
 
     try {
       const res = await profile.getMe();
-      setUser(res.data.user);
+      const resolvedLocale = await applyLocaleFromUser(res?.data?.user, { persistRemoteIfMissing: true });
+      setUser({
+        ...(res?.data?.user || {}),
+        locale: toSupportedLocale(res?.data?.user?.locale, resolvedLocale)
+      });
       const requiresReaccept = await refreshLegalStatus();
       if (!requiresReaccept) loadFriends();
     } catch {
       localStorage.removeItem('session_token');
     }
-  }, [loadFriends, refreshLegalStatus]);
+  }, [applyLocaleFromUser, loadFriends, refreshLegalStatus]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -669,8 +753,8 @@ function App() {
 
   useEffect(() => {
     const total = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
-    document.title = total > 0 ? `(${total}) TalkX` : 'TalkX';
-  }, [unreadCounts]);
+    document.title = total > 0 ? `(${total}) ${appName}` : appName;
+  }, [appName, unreadCounts]);
 
   useEffect(() => {
     const cleanupInsets = setupViewportInsets();
@@ -714,17 +798,17 @@ function App() {
     if (IS_NATIVE && local) {
       await showLocalNotification({ title, body, data });
     }
-  }, [showToast]);
+  }, [appName, showToast, t]);
 
   const normalizeAdminNotice = useCallback(({ title, body, data }) => {
-    const sourceTitle = 'TalkX';
+    const sourceTitle = appName;
     const noticeTitle = String(data?.noticeTitle || '').trim() || String(title || '').trim();
     const noticeBody = String(body || data?.body || '').trim();
     const combinedBody = noticeTitle && noticeBody
       ? `${noticeTitle}\n${noticeBody}`
-      : (noticeBody || noticeTitle || 'Yeni duyuru');
+      : (noticeBody || noticeTitle || t('app.newAnnouncement'));
     return { title: sourceTitle, body: combinedBody };
-  }, []);
+  }, [appName, t]);
 
   const clearPushRetry = useCallback(() => {
     if (pushRetryTimerRef.current) {
@@ -759,7 +843,7 @@ function App() {
           // Telemetry is best-effort only.
         }
         if (IS_DEV && previousToken !== tokenValue) {
-          showToast('TalkX Debug', 'Push token alindi', 2600);
+          showToast(`${appName} Debug`, 'Push token acquired', 2600);
         }
         return true;
       } catch (e) {
@@ -787,7 +871,7 @@ function App() {
       // Telemetry is best-effort only.
     }
     if (IS_DEV) {
-      showToast('TalkX Debug', 'Push register basarisiz', 3200);
+      showToast(`${appName} Debug`, 'Push registration failed', 3200);
     }
     if (!pushRetryTimerRef.current && user && nativePushTokenRef.current) {
       const step = Math.min(pushRetryAttemptRef.current, 8);
@@ -803,7 +887,7 @@ function App() {
 
   const handlePushPayload = useCallback(async (payload = {}, fromPushEvent = false) => {
     const data = payload.data || {};
-    const title = payload.title || payload.notification?.title || data.title || 'TalkX';
+    const title = payload.title || payload.notification?.title || data.title || appName;
     const body = payload.body || payload.notification?.body || data.body || '';
     const type = data.type || payload.type;
     const deliveryId = data.deliveryId || payload.deliveryId || payload.notification?.data?.deliveryId;
@@ -923,7 +1007,7 @@ function App() {
       if ((Number(current.attempts) || 0) >= OUTBOX_MAX_ATTEMPTS) {
         dropOutboxItem(item.clientMsgId);
         setMessageSendState(item.clientMsgId, { sendState: 'failed', errorCode: 'ACK_TIMEOUT' });
-        showToast('TalkX', 'Mesaj gonderilemedi. Baglanti kontrol edin.', 6000);
+        showToast(appName, t('app.connectionMissingMessage'), 6000);
         return;
       }
 
@@ -984,7 +1068,7 @@ function App() {
       if (!wsConfigWarnedRef.current) {
         wsConfigWarnedRef.current = true;
         console.warn('WebSocket URL is not configured. Set VITE_WS_URL or VITE_API_URL.');
-        showToast('TalkX', 'WS URL ayari eksik. VITE_WS_URL/VITE_API_URL kontrol et.', 8000);
+        showToast(appName, t('app.wsMissingConfig'), 8000);
       }
       return;
     }
@@ -1000,7 +1084,8 @@ function App() {
         type: 'hello_ack',
         deviceId: DEVICE_ID,
         token: localStorage.getItem('session_token'),
-        platform: IS_NATIVE ? 'android' : 'web'
+        platform: IS_NATIVE ? 'android' : 'web',
+        lang: activeLocale
       }));
     };
 
@@ -1031,7 +1116,7 @@ function App() {
             playSound();
             setStatus('matched');
             setRoomId(data.roomId);
-            setPeerName(data.peerNickname || 'Anonim');
+            setPeerName(data.peerNickname || t('chat.anonymous'));
             setPeerUsername(data.peerUsername);
             setPeerId(data.peerId);
             setMessages([]);
@@ -1064,7 +1149,7 @@ function App() {
               setUser(null);
               setScreen('splash');
             } else if (data.message) {
-              showToast('TalkX', data.message, 5000);
+              showToast(appName, data.message, 5000);
             }
             break;
           case 'direct_message': {
@@ -1093,8 +1178,8 @@ function App() {
               }));
 
               notifyIncoming({
-                title: data.fromNickname || data.fromUsername || 'Yeni mesaj',
-                body: data.msgType === 'image' ? 'Fotograf gonderdi' : (data.text || ''),
+                title: data.fromNickname || data.fromUsername || t('app.newMessage'),
+                body: data.msgType === 'image' ? t('app.photoReceived') : (data.text || ''),
                 data: {
                   type: 'direct_message',
                   fromUserId: senderId,
@@ -1117,7 +1202,7 @@ function App() {
             } else {
               setMessages(prev => [...prev, {
                 from: 'me',
-                text: 'Fotograf',
+                text: t('chat.photoLabel'),
                 msgType: 'image',
                 mediaId: data.mediaId
               }]);
@@ -1151,7 +1236,7 @@ function App() {
             }
             setImageViewer(prev => {
               if (!prev.open || prev.mediaId !== data.mediaId) return prev;
-              return { ...prev, status: 'error', error: data.message || 'Fotograf yuklenemedi.' };
+              return { ...prev, status: 'error', error: data.message || t('chat.photoOpenFailed') };
             });
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
             break;
@@ -1190,7 +1275,7 @@ function App() {
       setWsStatus('disconnected');
       if (!intentionalCloseRef.current) scheduleReconnect();
     };
-  }, [dropOutboxItem, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, user]);
+  }, [activeLocale, appName, dropOutboxItem, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, t, user]);
 
   useEffect(() => {
     connectWsFnRef.current = connect;
@@ -1310,14 +1395,14 @@ function App() {
     const mediaGranted = result?.media?.status === 'granted';
 
     if (pushGranted && mediaGranted) {
-      showToast('TalkX', 'İzin ayarları tamamlandı.', 4200);
+      showToast(appName, t('app.pushPermissionDone'), 4200);
       return;
     }
     if (!pushGranted) {
-      showToast('TalkX', 'Bildirim izni kapalı. Ayarlardan açabilirsiniz.', 6200);
+      showToast(appName, t('app.pushPermissionNotificationOff'), 6200);
     }
     if (!mediaGranted) {
-      showToast('TalkX', 'Kamera izni kapalı. Ayarlardan açabilirsiniz.', 6200);
+      showToast(appName, t('app.pushPermissionCameraOff'), 6200);
     }
   }, [showToast]);
 
@@ -1331,15 +1416,15 @@ function App() {
     } catch (e) {
       console.warn('Initial permission request failed:', e?.message || e);
       completePermissionOnboarding(null);
-      showToast('TalkX', 'İzin akışı tamamlanamadı. Ayarlardan açabilirsiniz.', 6200);
+      showToast(appName, t('app.pushPermissionFlowFailed'), 6200);
     }
-  }, [completePermissionOnboarding, permissionsRequesting, showToast]);
+  }, [appName, completePermissionOnboarding, permissionsRequesting, showToast, t]);
 
   const handleSkipPermissions = useCallback(() => {
     if (permissionsRequesting) return;
     completePermissionOnboarding(null);
-    showToast('TalkX', 'İzinleri daha sonra Ayarlar menüsünden açabilirsiniz.', 5800);
-  }, [completePermissionOnboarding, permissionsRequesting, showToast]);
+    showToast(appName, t('app.pushPermissionLater'), 5800);
+  }, [appName, completePermissionOnboarding, permissionsRequesting, showToast, t]);
 
   const handleLogout = async () => {
     shouldReconnectRef.current = false;
@@ -1408,14 +1493,14 @@ function App() {
   };
 
   const handleAccountDeletionRequested = async (message) => {
-    const finalMessage = String(message || '').trim() || 'Silme talebiniz alindi.';
+    const finalMessage = String(message || '').trim() || t('home.deleteRequestSubmitted');
     await handleLogout();
-    showToast('TalkX', `${finalMessage} Inceleme tamamlanana kadar giris yapamazsiniz.`, 8200);
+    showToast(appName, `${finalMessage} ${t('app.accountDeletionPostfix')}`, 8200);
   };
 
   const handleStartAnon = () => {
     if (!isWsReady()) {
-      showToast('TalkX', 'Baglanti yeniden kuruluyor. Lutfen tekrar deneyin.', 4500);
+      showToast(appName, t('app.reconnecting'), 4500);
       connectWsFnRef.current();
       return;
     }
@@ -1456,7 +1541,7 @@ function App() {
         .filter((entry) => entry.targetUserId === friend.user_id && !sentClientIds.has(entry.clientMsgId))
         .map((entry) => ({
           from: 'me',
-          text: entry.kind === 'direct_image_send' ? 'Fotograf' : entry.text,
+          text: entry.kind === 'direct_image_send' ? t('chat.photoLabel') : entry.text,
           msgType: entry.kind === 'direct_image_send' ? 'image' : 'direct',
           sendState: 'pending',
           clientMsgId: entry.clientMsgId
@@ -1480,18 +1565,18 @@ function App() {
   };
 
   const handleDeleteFriend = async (friendId) => {
-    if (!window.confirm('Bu arkadasi silmek istediginize emin misiniz?')) return;
+    if (!window.confirm(t('app.deleteFriendConfirm'))) return;
     try {
       await friends.delete(friendId);
       loadFriends();
     } catch (e) {
       console.error(e);
-      alert('Silinemedi.');
+      showToast(appName, getLocalizedApiError(t, e, 'app.deleteFriendFailed'), 6500);
     }
   };
 
   const handleBlockUser = async (friendId) => {
-    if (!window.confirm('Bu kullaniciyi engellemek istediginize emin misiniz?')) return;
+    if (!window.confirm(t('app.blockConfirm'))) return;
     try {
       await friends.block(friendId);
       if (activeFriend?.user_id === friendId) {
@@ -1500,32 +1585,31 @@ function App() {
       loadFriends();
     } catch (e) {
       console.error(e);
-      const backendMessage = e?.response?.data?.error || 'Engelleme islemi basarisiz.';
-      const backendCode = e?.response?.data?.code;
-      alert(backendCode ? `${backendMessage} (${backendCode})` : backendMessage);
+      showToast(appName, getLocalizedApiError(t, e, 'app.blockFailed'), 6500);
     }
   };
 
   const handleUnblockUser = async (friendId) => {
-    if (!window.confirm('Bu kullanicinin engelini kaldirmak istediginize emin misiniz?')) return;
+    if (!window.confirm(t('app.unblockConfirm'))) return;
     try {
       await friends.unblock(friendId);
       loadFriends();
     } catch (e) {
       console.error(e);
-      const backendMessage = e?.response?.data?.error || 'Engel kaldirma islemi basarisiz.';
-      const backendCode = e?.response?.data?.code;
-      alert(backendCode ? `${backendMessage} (${backendCode})` : backendMessage);
+      showToast(appName, getLocalizedApiError(t, e, 'app.unblockFailed'), 6500);
     }
   };
 
   const handleAddFriend = async () => {
-    if (!peerUsername) return alert('Kullanici adi bilgisi yok.');
+    if (!peerUsername) {
+      showToast(appName, t('app.addFriendMissingUsername'), 5000);
+      return;
+    }
     try {
       await friends.request(peerUsername);
-      alert('Arkadaslik istegi gonderildi.');
+      showToast(appName, t('app.friendRequestSent'), 4200);
     } catch (e) {
-      alert(e.response?.data?.error || 'Istek gonderilemedi.');
+      showToast(appName, getLocalizedApiError(t, e, 'app.addFriendFailed'), 6500);
     }
   };
 
@@ -1547,7 +1631,7 @@ function App() {
   const handleSendMessage = (text) => {
     if (chatMode === 'anon' && roomId) {
       if (!isWsReady()) {
-        showToast('TalkX', 'Baglanti yok. Mesaj gonderilemedi.', 4500);
+        showToast(appName, t('app.connectionMissingMessage'), 4500);
         connectWsFnRef.current();
         return;
       }
@@ -1612,8 +1696,12 @@ function App() {
   };
 
   const handleReport = () => {
-    const reason = prompt('Lutfen rapor sebebini belirtin (spam, hakaret, vb.):');
-    if (!reason || !isWsReady()) return;
+    const reason = window.prompt(t('app.reportPrompt'));
+    if (!reason || !String(reason).trim()) {
+      showToast(appName, t('app.reportReasonRequired'), 5000);
+      return;
+    }
+    if (!isWsReady()) return;
 
     if (chatMode === 'anon' && roomId) {
       ws.current.send(JSON.stringify({ type: 'report', roomId, reason }));
@@ -1621,14 +1709,14 @@ function App() {
       ws.current.send(JSON.stringify({ type: 'report', targetUserId: activeFriend.user_id, reason }));
     }
 
-    alert('Raporunuz iletildi.');
+    showToast(appName, t('app.reportDelivered'), 4500);
   };
 
   const handleSupportReport = async ({ subject, description, email, mediaFiles = [] }) => {
     const normalizedSubject = normalizeSupportSubject(subject);
     if (!normalizedSubject) {
-      const message = 'Gecersiz konu secimi.';
-      showToast('TalkX', message, 6500);
+      const message = t('app.invalidSubject');
+      showToast(appName, message, 6500);
       return { ok: false, error: message };
     }
 
@@ -1670,19 +1758,36 @@ function App() {
     try {
       const response = await supportApi.report(payload);
       if (!response?.data?.delivered) {
-        showToast('TalkX', 'Bildirimin alindi. Ekip en kisa surede inceleyecek.', 6500);
+        showToast(appName, t('app.supportQueued'), 6500);
       } else {
-        showToast('TalkX', 'Sorun bildirimi alindi. Tesekkurler.', 6500);
+        showToast(appName, t('app.supportReceived'), 6500);
       }
       return { ok: true };
     } catch (error) {
-      const message = error?.response?.data?.error || 'Sorun bildirimi gonderilemedi.';
-      showToast('TalkX', message, 6500);
+      const message = getLocalizedApiError(t, error, 'app.supportFailed');
+      showToast(appName, message, 6500);
       return { ok: false, error: message };
     } finally {
       setSupportSubmitting(false);
     }
   };
+
+  const handleLocaleChange = useCallback(async (nextLocale) => {
+    const previousLocale = activeLocale;
+    const normalized = toSupportedLocale(nextLocale, previousLocale);
+    setLocale(normalized, { persist: true });
+
+    if (!user?.id) return normalized;
+
+    try {
+      await profile.updateMe({ locale: normalized });
+      setUser((prev) => (prev ? { ...prev, locale: normalized } : prev));
+      return normalized;
+    } catch (error) {
+      setLocale(previousLocale, { persist: true });
+      throw error;
+    }
+  }, [activeLocale, setLocale, user?.id]);
 
   const closeImageViewer = () => {
     if (imageFetchTimeoutRef.current) {
@@ -1703,7 +1808,7 @@ function App() {
         return;
       }
       backPressAtRef.current = now;
-      showToast('TalkX', 'Çıkmak için tekrar geri basın.', 1800);
+      showToast(appName, t('app.exitBackAgain'), 1800);
     };
 
     (async () => {
@@ -1755,6 +1860,7 @@ function App() {
       }
     };
   }, [
+    appName,
     legalKind,
     user,
     imageViewer?.open,
@@ -1762,7 +1868,8 @@ function App() {
     closeImageViewer,
     handleLeaveChat,
     handleSkipPermissions,
-    showToast
+    showToast,
+    t
   ]);
 
   const handleSendImage = (base64) => {
@@ -1772,7 +1879,7 @@ function App() {
       clientMsgId,
       kind: 'direct_image_send',
       targetUserId: activeFriend.user_id,
-      text: 'Fotograf',
+      text: t('chat.photoLabel'),
       createdAt: nowTs(),
       expiresAt: nowTs() + OUTBOX_TTL_MS,
       attempts: 0,
@@ -1787,7 +1894,7 @@ function App() {
 
     setMessages(prev => [...prev, {
       from: 'me',
-      text: 'Fotograf',
+      text: t('chat.photoLabel'),
       msgType: 'image',
       sendState: 'pending',
       clientMsgId
@@ -1799,7 +1906,7 @@ function App() {
   const handleViewImage = (mediaId) => {
     if (!mediaId) return;
     if (!isWsReady()) {
-      showToast('TalkX', 'Baglanti yok. Fotograf simdi acilamiyor.', 4500);
+      showToast(appName, t('app.connectionMissingPhoto'), 4500);
       connectWsFnRef.current();
       return;
     }
@@ -1822,7 +1929,7 @@ function App() {
     imageFetchTimeoutRef.current = setTimeout(() => {
       setImageViewer(prev => {
         if (!prev.open || prev.mediaId !== mediaId || prev.status !== 'loading') return prev;
-        return { ...prev, status: 'error', error: 'Zaman asimi. Tekrar deneyin.' };
+        return { ...prev, status: 'error', error: t('chat.retry') };
       });
       imageFetchTimeoutRef.current = null;
     }, IMAGE_FETCH_TIMEOUT_MS);
@@ -1838,9 +1945,9 @@ function App() {
           aria-live="polite"
           style={{ '--toast-duration': `${notice.durationMs || TOAST_DEFAULT_MS}ms` }}
         >
-          <button className="admin-toast-close" onClick={() => dismissToast(notice.id)} aria-label="Close">x</button>
+          <button className="admin-toast-close" onClick={() => dismissToast(notice.id)} aria-label={t('common.close')}>x</button>
           <div className="admin-toast-header">
-            <span className="admin-toast-tag">Bildirim</span>
+            <span className="admin-toast-tag">{t('app.notificationTag')}</span>
           </div>
           <div className="admin-toast-title">{notice.title}</div>
           <div className="admin-toast-divider" />
@@ -1851,26 +1958,23 @@ function App() {
         </div>
       ))}
     </div>
-  ), [notices, dismissToast]);
+  ), [dismissToast, notices, t]);
 
   const permissionOnboarding = IS_NATIVE && user && showPermissionOnboarding && (
     <div className="permissions-onboarding-overlay">
       <div className="permissions-onboarding-card glass-card" role="dialog" aria-modal="true" aria-labelledby="permissions-onboarding-title">
-        <h3 id="permissions-onboarding-title" className="permissions-onboarding-title">İzinleri tamamlayın</h3>
-        <p className="permissions-onboarding-desc">
-          TalkX deneyimi için bildirim, kamera ve galeri izinlerini şimdi ayarlayabilirsiniz.
-          İzin vermeseniz de uygulama çalışır; ihtiyaç olduğunda ayarlardan açabilirsiniz.
-        </p>
+        <h3 id="permissions-onboarding-title" className="permissions-onboarding-title">{t('app.permissionsTitle')}</h3>
+        <p className="permissions-onboarding-desc">{t('app.permissionsDesc')}</p>
         <div className="permissions-onboarding-list">
-          <div className="permissions-onboarding-item">Bildirim: yeni mesaj ve duyuru bildirimleri</div>
-          <div className="permissions-onboarding-item">Kamera/Galeri: fotoğraf çekme ve gönderme</div>
+          <div className="permissions-onboarding-item">{t('app.permissionsNotificationItem')}</div>
+          <div className="permissions-onboarding-item">{t('app.permissionsMediaItem')}</div>
         </div>
         <div className="permissions-onboarding-actions">
           <button type="button" className="btn-neon" onClick={handleSkipPermissions} disabled={permissionsRequesting}>
-            Şimdi Değil
+            {t('app.permissionsNotNow')}
           </button>
           <button type="button" className="btn-solid-purple" onClick={handleEnablePermissions} disabled={permissionsRequesting}>
-            {permissionsRequesting ? 'İsteniyor...' : 'İzinleri Aç'}
+            {permissionsRequesting ? t('app.permissionsRequesting') : t('app.permissionsOpen')}
           </button>
         </div>
       </div>
@@ -1880,29 +1984,30 @@ function App() {
   const legalReacceptModal = user && legalReaccept.open && (
     <div className="legal-reaccept-overlay">
       <div className="legal-reaccept-card glass-card" role="dialog" aria-modal="true" aria-labelledby="legal-reaccept-title">
-        <h3 id="legal-reaccept-title" className="legal-reaccept-title">Sozlesmeler Guncellendi</h3>
-        <p className="legal-reaccept-desc">
-          Devam etmek icin guncel Gizlilik Politikasi ve Kullanim Sartlari metinlerini kabul etmeniz gerekiyor.
-        </p>
+        <h3 id="legal-reaccept-title" className="legal-reaccept-title">{t('legal.updatedContracts')}</h3>
+        <p className="legal-reaccept-desc">{t('legal.reacceptDescription')}</p>
         <div className="legal-reaccept-links">
-          <a href={legalContent?.footer?.privacyUrl || '/privacy-policy'} target="_blank" rel="noopener noreferrer">
-            {legalContent?.footer?.privacyLabel || 'Gizlilik Politikasi'}
+          <a href={localizedLegalFooter.privacyUrl || '/privacy-policy'} target="_blank" rel="noopener noreferrer">
+            {localizedLegalFooter.privacyLabel}
           </a>
-          <span>•</span>
-          <a href={legalContent?.footer?.termsUrl || '/terms-of-use'} target="_blank" rel="noopener noreferrer">
-            {legalContent?.footer?.termsLabel || 'Kullanim Sartlari'}
+          <span>&middot;</span>
+          <a href={localizedLegalFooter.termsUrl || '/terms-of-use'} target="_blank" rel="noopener noreferrer">
+            {localizedLegalFooter.termsLabel}
           </a>
         </div>
         <div className="legal-reaccept-versions">
-          Gerekli versiyon: {legalReaccept?.required?.terms || '-'} / {legalReaccept?.required?.privacy || '-'}
+          {t('legal.requiredVersion', {
+            terms: legalReaccept?.required?.terms || '-',
+            privacy: legalReaccept?.required?.privacy || '-'
+          })}
         </div>
         {legalReaccept.error ? <div className="support-error">{legalReaccept.error}</div> : null}
         <div className="legal-reaccept-actions">
           <button type="button" className="btn-neon" onClick={handleLogout} disabled={legalReaccept.loading}>
-            Cikis Yap
+            {t('legal.logout')}
           </button>
           <button type="button" className="btn-solid-purple" onClick={handleAcceptLatestLegal} disabled={legalReaccept.loading}>
-            {legalReaccept.loading ? 'Isleniyor...' : 'Okudum, Kabul Ediyorum'}
+            {legalReaccept.loading ? t('legal.accepting') : t('legal.accept')}
           </button>
         </div>
       </div>
@@ -1932,7 +2037,7 @@ function App() {
     return withToasts(
       <Auth
         onLogin={handleAuthLogin}
-        legalFooter={legalContent.footer}
+        legalFooter={localizedLegalFooter}
         legalVersions={legalContent.versions}
       />
     );
@@ -1954,7 +2059,9 @@ function App() {
         onLogout={handleLogout}
         onSupportSubmit={handleSupportReport}
         supportSubmitting={supportSubmitting}
-        legalFooter={legalContent.footer}
+        legalFooter={localizedLegalFooter}
+        currentLocale={activeLocale}
+        onLocaleChange={handleLocaleChange}
         onSelectMode={(mode) => {
           if (mode === 'anon') handleStartAnon();
           else if (mode === 'friends') {
@@ -2018,7 +2125,7 @@ function App() {
     );
   }
 
-  return withToasts(<div>Unknown State</div>);
+  return withToasts(<div>{t('app.unknownState')}</div>);
 }
 
 export default App;

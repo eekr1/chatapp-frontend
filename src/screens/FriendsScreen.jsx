@@ -1,5 +1,6 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
+import { useI18n } from '../i18n';
 
 const BackIcon = () => (
     <svg className="friends-back-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -46,7 +47,7 @@ const getAvatarInitial = (name) => {
     const normalized = String(name || '').trim();
     if (!normalized) return '?';
     const chars = Array.from(normalized);
-    return (chars[0] || '?').toLocaleUpperCase('tr-TR');
+    return (chars[0] || '?').toLocaleUpperCase();
 };
 
 const FriendsScreen = ({
@@ -62,15 +63,16 @@ const FriendsScreen = ({
     onUnblock,
     unreadCounts = {}
 }) => {
+    const { t } = useI18n();
     const [tab, setTab] = useState('list');
 
     return (
         <div className="screen-container animate-fade-in" style={{ padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-                <button onClick={onBack} className="friends-back-btn" aria-label="Geri">
+                <button onClick={onBack} className="friends-back-btn" aria-label={t('friends.back')}>
                     <BackIcon />
                 </button>
-                <h2 style={{ fontSize: '1.5rem', color: 'var(--accent)' }}>ARKADAŞLAR</h2>
+                <h2 style={{ fontSize: '1.5rem', color: 'var(--accent)' }}>{t('friends.title')}</h2>
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -79,21 +81,21 @@ const FriendsScreen = ({
                     style={tab !== 'list' ? { borderColor: 'var(--text-dim)', color: 'var(--text-dim)' } : {}}
                     onClick={() => setTab('list')}
                 >
-                    Arkadaşlarım
+                    {t('friends.tabList')}
                 </button>
                 <button
                     className={tab === 'requests' ? 'btn-solid-purple' : 'btn-neon'}
                     style={tab !== 'requests' ? { borderColor: 'var(--text-dim)', color: 'var(--text-dim)' } : {}}
                     onClick={() => setTab('requests')}
                 >
-                    İstekler {requests.length > 0 && <span className="friends-tab-badge">{requests.length}</span>}
+                    {t('friends.tabRequests')} {requests.length > 0 && <span className="friends-tab-badge">{requests.length}</span>}
                 </button>
                 <button
                     className={tab === 'blocked' ? 'btn-solid-purple' : 'btn-neon'}
                     style={tab !== 'blocked' ? { borderColor: 'var(--text-dim)', color: 'var(--text-dim)' } : {}}
                     onClick={() => setTab('blocked')}
                 >
-                    Engellenenler
+                    {t('friends.tabBlocked')}
                 </button>
             </div>
 
@@ -101,8 +103,8 @@ const FriendsScreen = ({
                 {tab === 'list' && (
                     friends.length === 0 ? (
                         <div className="center-flex" style={{ flex: 1, color: 'var(--text-dim)', opacity: 0.6 }}>
-                            <p>Henüz arkadaşın yok.</p>
-                            <p style={{ fontSize: '0.9rem' }}>Anonim sohbetlerden ekleyebilirsin.</p>
+                            <p>{t('friends.noFriends')}</p>
+                            <p style={{ fontSize: '0.9rem' }}>{t('friends.noFriendsSub')}</p>
                         </div>
                     ) : (
                         friends.map((f) => {
@@ -118,7 +120,7 @@ const FriendsScreen = ({
                                         <div className="friends-avatar">
                                             <span className="friends-avatar-initial">{getAvatarInitial(name)}</span>
                                             {count > 0 && <span className="friends-avatar-badge">{count}</span>}
-                                            {f.is_online && <span className="friends-avatar-online" title="Çevrimiçi" />}
+                                            {f.is_online && <span className="friends-avatar-online" title={t('friends.onlineTitle')} />}
                                         </div>
                                         <div style={{ minWidth: 0 }}>
                                             <h4 style={{ color: 'white', fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -130,21 +132,21 @@ const FriendsScreen = ({
 
                                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
                                         <button onClick={() => onChat(f)} className="btn-neon" style={{ padding: '8px 16px', fontSize: '0.9rem' }}>
-                                            MESAJ
+                                            {t('friends.message')}
                                         </button>
                                         <button
                                             onClick={() => onBlock?.(f.user_id)}
                                             className="friends-block-btn"
-                                            title="Kullanıcıyı engelle"
-                                            aria-label="Kullanıcıyı engelle"
+                                            title={t('friends.blockUser')}
+                                            aria-label={t('friends.blockUser')}
                                         >
                                             <BlockIcon />
                                         </button>
                                         <button
                                             onClick={() => onDelete(f.user_id)}
                                             className="friends-delete-btn"
-                                            title="Arkadaşı sil"
-                                            aria-label="Arkadaşı sil"
+                                            title={t('friends.deleteFriend')}
+                                            aria-label={t('friends.deleteFriend')}
                                         >
                                             <TrashIcon />
                                         </button>
@@ -158,7 +160,7 @@ const FriendsScreen = ({
                 {tab === 'requests' && (
                     requests.length === 0 ? (
                         <div className="center-flex" style={{ flex: 1, color: 'var(--text-dim)', opacity: 0.6 }}>
-                            <p>Bekleyen istek yok.</p>
+                            <p>{t('friends.noRequests')}</p>
                         </div>
                     ) : (
                         requests.map((r) => (
@@ -168,10 +170,10 @@ const FriendsScreen = ({
                                     <h4 style={{ color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{r.username}</h4>
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
-                                    <button onClick={() => onAccept(r.user_id)} className="friends-request-btn is-accept" aria-label="İsteği kabul et">
+                                    <button onClick={() => onAccept(r.user_id)} className="friends-request-btn is-accept" aria-label={t('friends.acceptRequest')}>
                                         <CheckIcon />
                                     </button>
-                                    <button onClick={() => onReject(r.user_id)} className="friends-request-btn is-reject" aria-label="İsteği reddet">
+                                    <button onClick={() => onReject(r.user_id)} className="friends-request-btn is-reject" aria-label={t('friends.rejectRequest')}>
                                         <CloseIcon />
                                     </button>
                                 </div>
@@ -183,7 +185,7 @@ const FriendsScreen = ({
                 {tab === 'blocked' && (
                     blockedUsers.length === 0 ? (
                         <div className="center-flex" style={{ flex: 1, color: 'var(--text-dim)', opacity: 0.6 }}>
-                            <p>Engellenen kullanıcı yok.</p>
+                            <p>{t('friends.noBlocked')}</p>
                         </div>
                     ) : (
                         blockedUsers.map((blocked) => {
@@ -208,10 +210,10 @@ const FriendsScreen = ({
                                     <button
                                         onClick={() => onUnblock?.(blocked.user_id)}
                                         className="friends-unblock-btn"
-                                        title="Engeli kaldır"
-                                        aria-label="Engeli kaldır"
+                                        title={t('friends.unblock')}
+                                        aria-label={t('friends.unblock')}
                                     >
-                                        Engeli Kaldır
+                                        {t('friends.unblock')}
                                     </button>
                                 </GlassCard>
                             );

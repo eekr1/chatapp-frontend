@@ -1,3 +1,5 @@
+import { getGlobalLocale, toSupportedLocale, translate } from '../i18n';
+
 const getPlugins = () => window.Capacitor?.Plugins || {};
 
 const normalizePermissionState = (value) => {
@@ -57,38 +59,43 @@ const LEGACY_CHANNEL_IDS = [
     'talkx_admin_v2',
     'talkx_default_v2'
 ];
-const PUSH_CHANNELS = [
-    {
-        id: CHANNEL_IDS.messages,
-        name: 'TalkX Messages',
-        description: 'Friend message notifications',
-        importance: 5,
-        sound: 'default',
-        vibration: true,
-        lights: true,
-        visibility: 1
-    },
-    {
-        id: CHANNEL_IDS.admin,
-        name: 'TalkX Announcements',
-        description: 'System and admin announcements',
-        importance: 5,
-        sound: 'default',
-        vibration: true,
-        lights: true,
-        visibility: 1
-    },
-    {
-        id: CHANNEL_IDS.default,
-        name: 'TalkX General',
-        description: 'Fallback notifications',
-        importance: 5,
-        sound: 'default',
-        vibration: true,
-        lights: true,
-        visibility: 1
-    }
-];
+const resolveNotificationLocale = () => toSupportedLocale(getGlobalLocale(), 'en');
+
+const buildPushChannels = () => {
+    const lang = resolveNotificationLocale();
+    return [
+        {
+            id: CHANNEL_IDS.messages,
+            name: translate(lang, 'app.pushChannelMessagesName', {}, 'TalkX Messages'),
+            description: translate(lang, 'app.pushChannelMessagesDesc', {}, 'Friend message notifications'),
+            importance: 5,
+            sound: 'default',
+            vibration: true,
+            lights: true,
+            visibility: 1
+        },
+        {
+            id: CHANNEL_IDS.admin,
+            name: translate(lang, 'app.pushChannelAdminName', {}, 'TalkX Announcements'),
+            description: translate(lang, 'app.pushChannelAdminDesc', {}, 'System and admin announcements'),
+            importance: 5,
+            sound: 'default',
+            vibration: true,
+            lights: true,
+            visibility: 1
+        },
+        {
+            id: CHANNEL_IDS.default,
+            name: translate(lang, 'app.pushChannelDefaultName', {}, 'TalkX General'),
+            description: translate(lang, 'app.pushChannelDefaultDesc', {}, 'Fallback notifications'),
+            importance: 5,
+            sound: 'default',
+            vibration: true,
+            lights: true,
+            visibility: 1
+        }
+    ];
+};
 
 export const isNativePlatform = () => {
     if (typeof window === 'undefined') return false;
@@ -305,7 +312,7 @@ export const initNativePush = async ({
                     }
                 }
             }
-            for (const channel of PUSH_CHANNELS) {
+            for (const channel of buildPushChannels()) {
                 if (existingIds.has(channel.id)) continue;
                 await PushNotifications.createChannel(channel);
             }

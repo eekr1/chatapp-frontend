@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react';
+import { useI18n } from '../i18n';
 
 const SplashScreen = ({ onFinish }) => {
+    const { t } = useI18n();
     useEffect(() => {
         const timer = setTimeout(() => {
             onFinish();
@@ -24,7 +26,7 @@ const SplashScreen = ({ onFinish }) => {
                 textTransform: 'uppercase',
                 opacity: 0.8
             }} className="animate-slide-up">
-                Cyber Connect
+                {t('splash.subtitle')}
             </p>
 
             {/* Abstract Neon Circle Spinner */}

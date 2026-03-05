@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { auth } from '../api';
+import { useI18n } from '../i18n';
 
 const DEFAULT_LEGAL_FOOTER = Object.freeze({
     privacyLabel: 'Gizlilik Politikasi',
@@ -16,6 +17,7 @@ const DEFAULT_LEGAL_VERSIONS = Object.freeze({
 const isExternalUrl = (value) => /^https:\/\//i.test(String(value || '').trim());
 
 export default function Auth({ onLogin, legalFooter, legalVersions }) {
+    const { t, locale } = useI18n();
     const [isLogin, setIsLogin] = useState(true);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -49,7 +51,7 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
             }
 
             if (!acceptLegal) {
-                setError('Kayit icin sozlesmeyi kabul etmelisiniz.');
+                setError(t('auth.legalRequired'));
                 return;
             }
 
@@ -57,13 +59,13 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                 terms_accepted: true,
                 terms_version: versions.terms,
                 privacy_version: versions.privacy
-            });
+            }, locale);
 
             const res = await auth.login(username, password, localStorage.getItem('anon_device_id') || 'unknown');
             localStorage.setItem('session_token', res.data.token);
             onLogin(res.data.user);
         } catch (err) {
-            setError(err.response?.data?.error || 'Bir hata olustu.');
+            setError(err.response?.data?.error || t('auth.genericError'));
         } finally {
             setLoading(false);
         }
@@ -76,12 +78,12 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                     <img src="/brand/talkx-icon-256.png" alt="TalkX icon" className="brand-lockup-icon" />
                     <h1 className="brand-lockup-text" style={{ margin: 0 }}>TalkX</h1>
                 </div>
-                <p className="subtitle">{isLogin ? 'Tekrar hos geldin!' : 'Yeni hesap olustur'}</p>
+                <p className="subtitle">{isLogin ? t('auth.welcomeBack') : t('auth.createAccount')}</p>
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 20 }}>
                     <input
                         className="input-glass"
-                        placeholder="Kullanici adi"
+                        placeholder={t('auth.username')}
                         value={username}
                         onChange={(event) => setUsername(event.target.value)}
                         autoFocus
@@ -89,7 +91,7 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                     <input
                         className="input-glass"
                         type={showPassword ? 'text' : 'password'}
-                        placeholder="Sifre"
+                        placeholder={t('auth.password')}
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
                     />
@@ -98,7 +100,7 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                         className="auth-password-toggle"
                         onClick={() => setShowPassword((prev) => !prev)}
                     >
-                        {showPassword ? 'Sifreyi Gizle' : 'Sifreyi Goster'}
+                        {showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                     </button>
 
                     {!isLogin && (
@@ -120,14 +122,14 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                                 >
                                     {footer.privacyLabel}
                                 </a>
-                                {' '}ve{' '}
+                                {' '}{t('auth.acceptLegalMiddle')}{' '}
                                 <a
                                     href={footer.termsUrl}
                                     {...(isExternalUrl(footer.termsUrl) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                                 >
                                     {footer.termsLabel}
                                 </a>
-                                {' '}metinlerini okudum ve kabul ediyorum.
+                                {' '}{t('auth.acceptLegalSuffix')}
                             </span>
                         </label>
                     )}
@@ -136,17 +138,17 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
 
                     {!isLogin && (
                         <div style={{ backgroundColor: 'rgba(231, 76, 60, 0.1)', border: '1px solid var(--danger)', borderRadius: '8px', padding: '10px', marginTop: '10px', marginBottom: '10px', fontSize: '0.85em', color: 'var(--danger)', textAlign: 'left' }}>
-                            <strong>Onemli Uyari:</strong><br />
-                            E-posta istemiyoruz. Sifreni unutursan hesabini kurtaramazsin. Sifreni bir yere not et.
+                            <strong>{t('auth.importantWarning')}</strong><br />
+                            {t('auth.noEmailRecovery')}
                         </div>
                     )}
 
                     <button type="submit" disabled={submitDisabled} className="btn-solid-purple" style={{ marginTop: 10, width: '100%' }}>
-                        {loading ? 'Isleniyor...' : (isLogin ? 'Giris Yap' : 'Kayit Ol')}
+                        {loading ? t('auth.processing') : (isLogin ? t('auth.submitLogin') : t('auth.submitRegister'))}
                     </button>
 
                     <p style={{ marginTop: '15px', fontSize: '0.9em', color: '#666' }}>
-                        {isLogin ? 'Hesabin yok mu? ' : 'Zaten hesabin var mi? '}
+                        {isLogin ? `${t('auth.noAccount')} ` : `${t('auth.haveAccount')} `}
                         <span
                             style={{ color: 'var(--primary)', cursor: 'pointer', fontWeight: 'bold' }}
                             onClick={() => {
@@ -156,7 +158,7 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                                 setAcceptLegal(false);
                             }}
                         >
-                            {isLogin ? 'Kayit Ol' : 'Giris Yap'}
+                            {isLogin ? t('auth.submitRegister') : t('auth.submitLogin')}
                         </span>
                     </p>
                 </form>

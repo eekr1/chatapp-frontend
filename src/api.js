@@ -1,4 +1,9 @@
 import axios from 'axios';
+import {
+    getGlobalLocale,
+    resolveLocale,
+    toSupportedLocale
+} from './i18n';
 
 let lastErrorCode = null;
 
@@ -19,6 +24,12 @@ if (import.meta.env.DEV && isNative && !baseURL) {
 const api = axios.create({
     baseURL
 });
+
+const resolveRequestLocale = () => {
+    const current = toSupportedLocale(getGlobalLocale(), null);
+    if (current) return current;
+    return toSupportedLocale(resolveLocale(), 'en');
+};
 
 const persistLastErrorCode = (code) => {
     lastErrorCode = code || null;
@@ -52,6 +63,7 @@ api.interceptors.request.use(config => {
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
+    config.headers['X-TalkX-Lang'] = resolveRequestLocale();
     return config;
 });
 
@@ -68,9 +80,10 @@ api.interceptors.response.use(
 );
 
 export const auth = {
-    register: (username, password, legalPayload = {}) => api.post('/auth/register', {
+    register: (username, password, legalPayload = {}, locale = null) => api.post('/auth/register', {
         username,
         password,
+        ...(locale ? { locale } : {}),
         ...legalPayload
     }),
     login: (username, password, device_id) => api.post('/auth/login', { username, password, device_id }),
@@ -150,6 +163,17 @@ export const getLastErrorCode = () => {
 
 export const getAvatar = (seed) => {
     return `https://api.dicebear.com/9.x/bottts/svg?seed=${seed || 'anon'}`;
+};
+
+export const getLocalizedApiError = (t, error, fallbackKey = 'errors.SERVER_ERROR') => {
+    const code = String(error?.response?.data?.code || '').trim();
+    if (code) {
+        const translated = t(`errors.${code}`, {}, null);
+        if (translated && translated !== `errors.${code}`) return translated;
+    }
+    const message = String(error?.response?.data?.error || '').trim();
+    if (message) return message;
+    return t(fallbackKey, {}, 'Server error.');
 };
 
 export default api;

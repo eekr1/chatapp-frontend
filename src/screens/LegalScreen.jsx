@@ -1,36 +1,33 @@
-import React, { useMemo } from 'react';
-
-const SUPPORTED_LANGS = new Set(['tr', 'en']);
-
-const resolveLang = () => {
-    if (typeof window !== 'undefined') {
-        try {
-            const params = new URLSearchParams(window.location.search || '');
-            const q = String(params.get('lang') || '').trim().toLowerCase();
-            if (SUPPORTED_LANGS.has(q)) return q;
-        } catch {
-            // Ignore malformed query and continue with fallback chain.
-        }
-    }
-
-    const navLang = typeof navigator !== 'undefined'
-        ? String(navigator.language || navigator.userLanguage || '').trim().toLowerCase()
-        : '';
-    if (navLang.startsWith('en')) return 'en';
-    if (navLang.startsWith('tr')) return 'tr';
-    return 'tr';
-};
+import React from 'react';
+import { toSupportedLocale, useI18n } from '../i18n';
 
 const normalizeKind = (kind) => (kind === 'terms' ? 'terms' : 'privacy');
 
+const readQueryLang = () => {
+    if (typeof window === 'undefined') return null;
+    try {
+        const params = new URLSearchParams(window.location.search || '');
+        return toSupportedLocale(params.get('lang'), null);
+    } catch {
+        return null;
+    }
+};
+
+const pickLocalizedDoc = (docByLang = {}, lang = 'en') => {
+    if (!docByLang || typeof docByLang !== 'object') return {};
+    return docByLang[lang] || docByLang.en || docByLang.tr || {};
+};
+
 const LegalScreen = ({ kind = 'privacy', legalContent = null, loading = false }) => {
+    const { locale, t } = useI18n();
     const resolvedKind = normalizeKind(kind);
-    const lang = useMemo(() => resolveLang(), []);
+    const queryLang = readQueryLang();
+    const activeLang = queryLang || toSupportedLocale(locale, 'en');
 
     const docs = legalContent?.documents || {};
     const selectedDoc = docs[resolvedKind] || {};
-    const doc = selectedDoc[lang] || selectedDoc.tr || selectedDoc.en || {};
-    const title = doc.title || (resolvedKind === 'privacy' ? 'Gizlilik Politikasi' : 'Kullanim Sartlari');
+    const doc = pickLocalizedDoc(selectedDoc, activeLang);
+    const title = doc.title || (resolvedKind === 'privacy' ? 'Privacy Policy' : 'Terms of Use');
     const content = doc.content || '';
 
     return (
@@ -39,17 +36,17 @@ const LegalScreen = ({ kind = 'privacy', legalContent = null, loading = false })
                 <header className="legal-screen-header">
                     <div className="legal-header-left">
                         <a href="/" className="legal-back-link">TalkX</a>
-                        <a href="/" className="legal-back-btn" aria-label="Ana Sayfaya Dön">
-                            Ana Sayfaya Dön
+                        <a href="/" className="legal-back-btn" aria-label={t('legal.backHome')}>
+                            {t('legal.backHome')}
                         </a>
                     </div>
-                    <span className="legal-lang-pill">{lang.toUpperCase()}</span>
+                    <span className="legal-lang-pill">{activeLang.toUpperCase()}</span>
                 </header>
 
                 <h1 className="legal-screen-title">{title}</h1>
 
                 {loading ? (
-                    <p className="legal-screen-loading">Yukleniyor...</p>
+                    <p className="legal-screen-loading">{t('common.loading')}</p>
                 ) : (
                     <article className="legal-screen-content">{content}</article>
                 )}
