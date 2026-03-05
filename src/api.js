@@ -95,6 +95,8 @@ export const auth = {
 
 export const profile = {
     getMe: () => api.get('/api/me'),
+    getLegalStatus: () => api.get('/api/me/legal-status'),
+    acceptLegalVersions: (terms_version, privacy_version) => api.post('/api/me/legal-accept', { terms_version, privacy_version }),
     updateMe: (data) => api.put('/api/me/profile', data),
     changePassword: (current_password, new_password) => api.put('/api/me/password', { current_password, new_password }),
     requestDeletion: (current_password, confirm_text) => api.post('/api/me/delete-request', { current_password, confirm_text })

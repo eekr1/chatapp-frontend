@@ -338,6 +338,13 @@ function App() {
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const [legalContent, setLegalContent] = useState(() => cloneLegalContent());
   const [legalLoaded, setLegalLoaded] = useState(false);
+  const [legalReaccept, setLegalReaccept] = useState({
+    open: false,
+    loading: false,
+    error: '',
+    required: null,
+    accepted: null
+  });
   const [showPermissionOnboarding, setShowPermissionOnboarding] = useState(false);
   const [permissionsRequesting, setPermissionsRequesting] = useState(false);
   const [nativePermissionsReady, setNativePermissionsReady] = useState(() => !IS_NATIVE);
@@ -565,9 +572,81 @@ function App() {
       });
       setUnreadCounts(initialUnread);
     } catch (e) {
+      if (e?.response?.status === 428 && e?.response?.data?.code === 'LEGAL_REACCEPT_REQUIRED') {
+        setLegalReaccept((prev) => ({
+          ...prev,
+          open: true,
+          error: '',
+          required: e?.response?.data?.required_versions || prev.required,
+          accepted: e?.response?.data?.accepted_versions || prev.accepted
+        }));
+      }
       console.error('Friends load error:', e);
     }
   }, []);
+
+  const refreshLegalStatus = useCallback(async () => {
+    try {
+      const response = await profile.getLegalStatus();
+      const required = response?.data?.required_versions || null;
+      const accepted = response?.data?.accepted_versions || null;
+      const requires = Boolean(response?.data?.requires_reaccept);
+      setLegalReaccept((prev) => ({
+        ...prev,
+        open: requires,
+        required,
+        accepted,
+        error: ''
+      }));
+      return requires;
+    } catch (error) {
+      console.error('Legal status check failed:', error);
+      return false;
+    }
+  }, []);
+
+  const handleAcceptLatestLegal = useCallback(async () => {
+    const required = legalReaccept?.required || {};
+    const termsVersion = String(required.terms || '').trim();
+    const privacyVersion = String(required.privacy || '').trim();
+    if (!termsVersion || !privacyVersion) {
+      setLegalReaccept((prev) => ({
+        ...prev,
+        error: 'Gecerli legal versiyon bilgisi okunamadi. Lutfen sayfayi yenileyin.'
+      }));
+      return;
+    }
+
+    setLegalReaccept((prev) => ({ ...prev, loading: true, error: '' }));
+    try {
+      await profile.acceptLegalVersions(termsVersion, privacyVersion);
+      setLegalReaccept((prev) => ({
+        ...prev,
+        open: false,
+        loading: false,
+        error: '',
+        accepted: {
+          terms: termsVersion,
+          privacy: privacyVersion,
+          accepted_at: new Date().toISOString()
+        }
+      }));
+      loadFriends();
+      showToast('TalkX', 'Sozlesme kabul edildi.', 3500);
+    } catch (error) {
+      setLegalReaccept((prev) => ({
+        ...prev,
+        loading: false,
+        error: error?.response?.data?.error || 'Kabul islemi basarisiz. Tekrar deneyin.'
+      }));
+    }
+  }, [legalReaccept?.required, loadFriends, showToast]);
+
+  const handleAuthLogin = useCallback(async (nextUser) => {
+    setUser(nextUser);
+    const requiresReaccept = await refreshLegalStatus();
+    if (!requiresReaccept) loadFriends();
+  }, [loadFriends, refreshLegalStatus]);
 
   const checkAuth = useCallback(async () => {
     const token = localStorage.getItem('session_token');
@@ -576,11 +655,12 @@ function App() {
     try {
       const res = await profile.getMe();
       setUser(res.data.user);
-      loadFriends();
+      const requiresReaccept = await refreshLegalStatus();
+      if (!requiresReaccept) loadFriends();
     } catch {
       localStorage.removeItem('session_token');
     }
-  }, [loadFriends]);
+  }, [loadFriends, refreshLegalStatus]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1312,6 +1392,13 @@ function App() {
     setIsPeerTyping(false);
     setRoomId(null);
     setChatMode('anon');
+    setLegalReaccept({
+      open: false,
+      loading: false,
+      error: '',
+      required: null,
+      accepted: null
+    });
 
     if (imageFetchTimeoutRef.current) {
       clearTimeout(imageFetchTimeoutRef.current);
@@ -1593,10 +1680,7 @@ function App() {
       showToast('TalkX', message, 6500);
       return { ok: false, error: message };
     } finally {
-    setSupportSubmitting(false);
-    setShowPermissionOnboarding(false);
-    setPermissionsRequesting(false);
-    setNativePermissionsReady(!IS_NATIVE);
+      setSupportSubmitting(false);
     }
   };
 
@@ -1793,11 +1877,44 @@ function App() {
     </div>
   );
 
+  const legalReacceptModal = user && legalReaccept.open && (
+    <div className="legal-reaccept-overlay">
+      <div className="legal-reaccept-card glass-card" role="dialog" aria-modal="true" aria-labelledby="legal-reaccept-title">
+        <h3 id="legal-reaccept-title" className="legal-reaccept-title">Sozlesmeler Guncellendi</h3>
+        <p className="legal-reaccept-desc">
+          Devam etmek icin guncel Gizlilik Politikasi ve Kullanim Sartlari metinlerini kabul etmeniz gerekiyor.
+        </p>
+        <div className="legal-reaccept-links">
+          <a href={legalContent?.footer?.privacyUrl || '/privacy-policy'} target="_blank" rel="noopener noreferrer">
+            {legalContent?.footer?.privacyLabel || 'Gizlilik Politikasi'}
+          </a>
+          <span>•</span>
+          <a href={legalContent?.footer?.termsUrl || '/terms-of-use'} target="_blank" rel="noopener noreferrer">
+            {legalContent?.footer?.termsLabel || 'Kullanim Sartlari'}
+          </a>
+        </div>
+        <div className="legal-reaccept-versions">
+          Gerekli versiyon: {legalReaccept?.required?.terms || '-'} / {legalReaccept?.required?.privacy || '-'}
+        </div>
+        {legalReaccept.error ? <div className="support-error">{legalReaccept.error}</div> : null}
+        <div className="legal-reaccept-actions">
+          <button type="button" className="btn-neon" onClick={handleLogout} disabled={legalReaccept.loading}>
+            Cikis Yap
+          </button>
+          <button type="button" className="btn-solid-purple" onClick={handleAcceptLatestLegal} disabled={legalReaccept.loading}>
+            {legalReaccept.loading ? 'Isleniyor...' : 'Okudum, Kabul Ediyorum'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const withToasts = (content) => (
     <>
       {content}
       {toastStack}
       {permissionOnboarding}
+      {legalReacceptModal}
     </>
   );
 
@@ -1814,7 +1931,7 @@ function App() {
   if (!user) {
     return withToasts(
       <Auth
-        onLogin={setUser}
+        onLogin={handleAuthLogin}
         legalFooter={legalContent.footer}
         legalVersions={legalContent.versions}
       />

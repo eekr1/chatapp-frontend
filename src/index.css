@@ -1399,6 +1399,80 @@ h4 {
   font-size: 0.8rem;
 }
 
+.legal-reaccept-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  background: rgba(6, 9, 16, 0.78);
+  backdrop-filter: blur(7px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.legal-reaccept-card {
+  width: min(560px, 100%);
+  border-radius: 18px;
+  padding: 18px 16px;
+  border: 1px solid rgba(255, 160, 188, 0.34);
+  background:
+    radial-gradient(120% 82% at 5% 0%, rgba(255, 121, 170, 0.12), rgba(255, 121, 170, 0)),
+    rgba(17, 16, 31, 0.92);
+  box-shadow: 0 28px 58px rgba(1, 5, 18, 0.62);
+}
+
+.legal-reaccept-title {
+  font-size: 1.05rem;
+  color: #ffe8f1;
+  margin-bottom: 8px;
+}
+
+.legal-reaccept-desc {
+  color: rgba(224, 236, 252, 0.88);
+  font-size: 0.84rem;
+  line-height: 1.42;
+  margin-bottom: 10px;
+}
+
+.legal-reaccept-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.legal-reaccept-links a {
+  color: rgba(193, 234, 255, 0.96);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(126, 205, 255, 0.52);
+  font-size: 0.8rem;
+}
+
+.legal-reaccept-links a:hover,
+.legal-reaccept-links a:focus-visible {
+  color: #ffffff;
+  border-bottom-color: rgba(172, 224, 255, 0.72);
+}
+
+.legal-reaccept-versions {
+  margin-bottom: 12px;
+  color: rgba(206, 224, 246, 0.8);
+  font-size: 0.78rem;
+}
+
+.legal-reaccept-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.legal-reaccept-actions .btn-neon,
+.legal-reaccept-actions .btn-solid-purple {
+  padding: 9px 14px;
+  font-size: 0.8rem;
+}
+
 @media (max-width: 600px) {
   .home-footer {
     padding-bottom: calc(var(--safe-bottom) + 102px);
@@ -1434,6 +1508,11 @@ h4 {
     border-radius: 16px;
   }
 
+  .legal-reaccept-card {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
   .support-actions {
     width: 100%;
   }
@@ -1441,7 +1520,9 @@ h4 {
   .support-actions .btn-neon,
   .support-actions .btn-solid-purple,
   .permissions-onboarding-actions .btn-neon,
-  .permissions-onboarding-actions .btn-solid-purple {
+  .permissions-onboarding-actions .btn-solid-purple,
+  .legal-reaccept-actions .btn-neon,
+  .legal-reaccept-actions .btn-solid-purple {
     flex: 1;
   }
 
