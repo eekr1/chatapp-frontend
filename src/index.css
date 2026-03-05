@@ -1105,6 +1105,20 @@ h4 {
   padding: 16px;
 }
 
+.settings-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  background: rgba(6, 9, 16, 0.7);
+  backdrop-filter: blur(6px);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(var(--safe-top) + 10px) 16px calc(var(--safe-bottom) + 10px + var(--keyboard-offset, 0px));
+}
+
 .support-modal-card {
   width: min(560px, 100%);
   border-radius: 18px;
@@ -1118,6 +1132,7 @@ h4 {
 
 .settings-modal-card {
   width: min(560px, 100%);
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px);
   border-radius: 18px;
   padding: 18px 16px;
   border: 1px solid rgba(126, 177, 255, 0.32);
@@ -1128,6 +1143,9 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .settings-section {
@@ -1230,6 +1248,16 @@ h4 {
 .support-modal-header h3 {
   font-size: 1.05rem;
   color: #ffe3ed;
+}
+
+.settings-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: -4px -2px 10px;
+  padding: 6px 2px 8px;
+  background: linear-gradient(180deg, rgba(14, 17, 31, 0.96), rgba(14, 17, 31, 0.72) 72%, rgba(14, 17, 31, 0));
+  backdrop-filter: blur(6px);
 }
 
 .support-close-btn {
@@ -1499,6 +1527,7 @@ h4 {
   }
 
   .settings-modal-card {
+    width: 100%;
     padding: 14px;
     border-radius: 16px;
   }

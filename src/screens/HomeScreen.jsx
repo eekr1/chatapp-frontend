@@ -523,9 +523,9 @@ const HomeScreen = ({
             )}
 
             {settingsOpen && (
-                <div className="support-modal-overlay" onClick={closeSettingsModal}>
+                <div className="settings-modal-overlay" onClick={closeSettingsModal}>
                     <div className="settings-modal-card glass-card" onClick={(event) => event.stopPropagation()}>
-                        <div className="support-modal-header">
+                        <div className="support-modal-header settings-modal-header">
                             <h3>{t('home.settingsTitle')}</h3>
                             <button type="button" className="support-close-btn" onClick={closeSettingsModal} aria-label={t('common.close')}>x</button>
                         </div>
