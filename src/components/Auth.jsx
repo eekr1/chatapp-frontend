@@ -33,7 +33,7 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
         [legalVersions]
     );
 
-    const registerDisabled = loading || (!isLogin && !acceptLegal);
+    const submitDisabled = loading;
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -106,7 +106,11 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                             <input
                                 type="checkbox"
                                 checked={acceptLegal}
-                                onChange={(event) => setAcceptLegal(event.target.checked)}
+                                onChange={(event) => {
+                                    const checked = event.target.checked;
+                                    setAcceptLegal(checked);
+                                    if (checked) setError('');
+                                }}
                             />
                             <span>
                                 {' '}
@@ -137,7 +141,7 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                         </div>
                     )}
 
-                    <button type="submit" disabled={registerDisabled} className="btn-solid-purple" style={{ marginTop: 10, width: '100%' }}>
+                    <button type="submit" disabled={submitDisabled} className="btn-solid-purple" style={{ marginTop: 10, width: '100%' }}>
                         {loading ? 'Isleniyor...' : (isLogin ? 'Giris Yap' : 'Kayit Ol')}
                     </button>
 
