@@ -1,7 +1,11 @@
 import React from 'react';
 import { toSupportedLocale, useI18n } from '../i18n';
 
-const normalizeKind = (kind) => (kind === 'terms' ? 'terms' : 'privacy');
+const normalizeKind = (kind) => {
+    if (kind === 'terms') return 'terms';
+    if (kind === 'childSafety') return 'childSafety';
+    return 'privacy';
+};
 
 const readQueryLang = () => {
     if (typeof window === 'undefined') return null;
@@ -27,7 +31,10 @@ const LegalScreen = ({ kind = 'privacy', legalContent = null, loading = false })
     const docs = legalContent?.documents || {};
     const selectedDoc = docs[resolvedKind] || {};
     const doc = pickLocalizedDoc(selectedDoc, activeLang);
-    const title = doc.title || (resolvedKind === 'privacy' ? 'Privacy Policy' : 'Terms of Use');
+    const fallbackTitle = resolvedKind === 'privacy'
+        ? 'Privacy Policy'
+        : (resolvedKind === 'terms' ? 'Terms of Use' : 'Child Safety Standards');
+    const title = doc.title || fallbackTitle;
     const content = doc.content || '';
 
     return (

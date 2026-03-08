@@ -17,7 +17,7 @@ If you are developing a production application, we recommend using TypeScript wi
 
 ## Render (Classic Static Service) Deep-Link Fix
 
-If `/privacy-policy` or `/terms-of-use` returns 404 on Render classic static hosting,
+If `/privacy-policy`, `/terms-of-use`, or `/child-safety` returns 404 on Render classic static hosting,
 configure rewrites from dashboard. See:
 
 - `RENDER_CLASSIC_STATIC_FIX.md`

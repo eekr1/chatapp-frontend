@@ -1,4 +1,4 @@
-# Render Classic Static Site: `/privacy-policy` ve `/terms-of-use` 404 Fix
+# Render Classic Static Site: `/privacy-policy`, `/terms-of-use`, `/child-safety` 404 Fix
 
 Bu proje React SPA oldugu icin deep-link URL'lerde static host rewrite gerekir.
 
@@ -24,6 +24,10 @@ Render Dashboard > ilgili Static Service > `Redirects/Rewrites`:
    Destination: `/index.html`
    Action: `Rewrite`
 
+3. Source: `/child-safety`
+   Destination: `/index.html`
+   Action: `Rewrite`
+
 Kaydet, sonra manuel redeploy yap.
 
 ## Onemli notlar
@@ -39,4 +43,5 @@ Kaydet, sonra manuel redeploy yap.
 2. `https://www.talkx.chat/privacy-policy` aciliyor.
 3. `https://www.talkx.chat/terms-of-use` aciliyor.
 4. Hard refresh sonrasi da 404 yok.
-5. `?lang=tr` ve `?lang=en` dogru calisiyor.
+5. `https://www.talkx.chat/child-safety` aciliyor.
+6. `?lang=tr` ve `?lang=en` dogru calisiyor.

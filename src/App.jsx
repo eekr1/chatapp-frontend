@@ -202,7 +202,8 @@ const normalizeSupportSubject = (value) => {
 
 const LEGAL_ROUTE_KIND = Object.freeze({
   '/privacy-policy': 'privacy',
-  '/terms-of-use': 'terms'
+  '/terms-of-use': 'terms',
+  '/child-safety': 'childSafety'
 });
 
 const DEFAULT_LEGAL_CONTENT = Object.freeze({
@@ -244,6 +245,16 @@ const DEFAULT_LEGAL_CONTENT = Object.freeze({
       }),
       en: Object.freeze({
         title: 'Terms of Use',
+        content: 'This text can be updated from the admin panel.'
+      })
+    }),
+    childSafety: Object.freeze({
+      tr: Object.freeze({
+        title: 'Cocuk Guvenligi Standartlari',
+        content: 'Bu metin admin panelinden guncellenebilir.'
+      }),
+      en: Object.freeze({
+        title: 'Child Safety Standards',
         content: 'This text can be updated from the admin panel.'
       })
     })
@@ -341,6 +352,10 @@ const normalizeLegalContent = (value) => {
       terms: {
         tr: normalizeLegalLangDoc(docsSource?.terms?.tr, defaults.documents.terms.tr),
         en: normalizeLegalLangDoc(docsSource?.terms?.en, defaults.documents.terms.en)
+      },
+      childSafety: {
+        tr: normalizeLegalLangDoc(docsSource?.childSafety?.tr, defaults.documents.childSafety.tr),
+        en: normalizeLegalLangDoc(docsSource?.childSafety?.en, defaults.documents.childSafety.en)
       }
     }
   };
