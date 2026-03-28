@@ -208,6 +208,7 @@ const ChatScreen = ({
             <div style={{
                 flex: 1,
                 overflowY: 'auto',
+                overflowX: 'hidden',
                 padding: 'calc(var(--safe-top) + 72px) 20px calc(var(--safe-bottom) + var(--keyboard-offset, 0px) + 110px) 20px',
                 display: 'flex',
                 flexDirection: 'column',
