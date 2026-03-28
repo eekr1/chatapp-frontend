@@ -867,6 +867,7 @@ h4 {
   position: relative;
   min-width: 0;
   overflow-wrap: anywhere;
+  word-wrap: break-word;
   word-break: break-word;
   white-space: pre-wrap;
 }
@@ -881,6 +882,17 @@ h4 {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
   min-width: 0;
   overflow-wrap: anywhere;
+  word-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.chat-message-text {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
   word-break: break-word;
   white-space: pre-wrap;
 }
@@ -1573,3 +1585,17 @@ h4 {
     padding: 16px;
   }
 }
+
+@media (max-width: 600px) {
+  .chat-bubble-me,
+  .chat-bubble-peer {
+    max-width: min(82%, calc(100vw - 40px));
+    overflow: hidden;
+  }
+
+  .chat-message-text {
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+}
+

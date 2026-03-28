@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import GlassCard from '../components/GlassCard';
 import {
     pickImageFromCamera,
@@ -37,7 +37,19 @@ const dataUrlToBytes = (dataUrl) => {
     const padding = b64.endsWith('==') ? 2 : (b64.endsWith('=') ? 1 : 0);
     return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
 };
-
+const SOFT_WRAP_CHUNK = 18;
+const applySoftWrap = (text) => {
+    const raw = String(text ?? '');
+    if (!raw) return '';
+    return raw
+        .split(/(\s+)/)
+        .map((part) => {
+            if (!part || /\s+/.test(part) || part.length <= SOFT_WRAP_CHUNK) return part;
+            const chunks = part.match(new RegExp('.{1,' + SOFT_WRAP_CHUNK + '}', 'g'));
+            return chunks ? chunks.join('\u200b') : part;
+        })
+        .join('');
+};
 const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
@@ -216,7 +228,7 @@ const ChatScreen = ({
             }}>
                 {messages.map((m, i) => (
                     <div key={i} className={m.from === 'me' ? 'chat-bubble-me animate-slide-up' : 'chat-bubble-peer animate-slide-up'}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
                             {m.msgType === 'image' ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     {m.mediaExpired ? (
@@ -232,7 +244,7 @@ const ChatScreen = ({
                                     )}
                                 </div>
                             ) : (
-                                m.text
+                                <span className="chat-message-text">{applySoftWrap(m.text)}</span>
                             )}
                             {m.from === 'me' && m.sendState === 'pending' && (
                                 <span style={{ fontSize: '0.72rem', opacity: 0.75 }}>{t('chat.sending')}</span>
@@ -426,3 +438,6 @@ const ChatScreen = ({
 };
 
 export default ChatScreen;
+
+
+
