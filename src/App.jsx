@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './index.css';
 import {
   auth,
@@ -27,6 +27,7 @@ import {
   addNativeBackButtonListener,
   exitNativeApp,
   initNativePush,
+  initNativeLocalNotifications,
   requestInitialPermissions,
   showLocalNotification,
   CHANNEL_IDS
@@ -61,6 +62,8 @@ const PUSH_LAST_REGISTER_AT_KEY = 'talkx_push_last_register_at';
 const PUSH_LAST_REGISTER_ERROR_KEY = 'talkx_push_last_register_error';
 const PERMISSIONS_ONBOARDED_KEY = 'talkx_permissions_onboarded_v1';
 const BACK_EXIT_WINDOW_MS = 1900;
+const FRIEND_REQUEST_PROMPT_MS = 11000;
+const FRIEND_REQUEST_DEDUPE_TTL_MS = 15000;
 const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const nowTs = () => Date.now();
 
@@ -110,6 +113,15 @@ const isAppForeground = () => {
   if (document.visibilityState && document.visibilityState !== 'visible') return false;
   if (typeof document.hasFocus === 'function' && !document.hasFocus()) return false;
   return true;
+};
+
+
+const resolveFriendRequestSenderLabel = (payload = {}) => {
+  const display = String(payload.from_display_name || payload.fromDisplayName || '').trim();
+  if (display) return display;
+  const username = String(payload.from_username || payload.fromUsername || '').trim();
+  if (username) return username;
+  return 'TalkX';
 };
 
 const resolveWsUrl = ({ isNative, isDev }) => {
@@ -181,11 +193,11 @@ const resolveNetworkType = () => {
 const SUPPORT_SUBJECTS = new Set(['connection', 'message', 'photo', 'other']);
 const SUPPORT_SUBJECT_ALIAS = new Map([
   ['baglanti', 'connection'],
-  ['bağlantı', 'connection'],
+  ['baÄŸlantÄ±', 'connection'],
   ['mesaj', 'message'],
   ['foto', 'photo'],
   ['diger', 'other'],
-  ['diğer', 'other']
+  ['diÄŸer', 'other']
 ]);
 
 const normalizeSupportSubject = (value) => {
@@ -405,6 +417,7 @@ function App() {
   const [chatMode, setChatMode] = useState('anon');
 
   const [notices, setNotices] = useState([]);
+  const [friendRequestPrompts, setFriendRequestPrompts] = useState([]);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const [legalContent, setLegalContent] = useState(() => cloneLegalContent());
   const [legalLoaded, setLegalLoaded] = useState(false);
@@ -429,6 +442,8 @@ function App() {
   const typingTimeoutRef = useRef(null);
   const lastTypingSentRef = useRef(0);
   const toastTimersRef = useRef(new Map());
+  const friendRequestPromptTimersRef = useRef(new Map());
+  const seenFriendRequestRef = useRef(new Map());
   const noticesRef = useRef(notices);
   const pushTokenRef = useRef(null);
   const nativePushTokenRef = useRef(null);
@@ -602,6 +617,17 @@ function App() {
     startToastExit(id);
   }, [startToastExit]);
 
+  const dismissFriendRequestPrompt = useCallback((requestUserId) => {
+    const key = String(requestUserId || '').trim();
+    if (!key) return;
+    const timer = friendRequestPromptTimersRef.current.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      friendRequestPromptTimersRef.current.delete(key);
+    }
+    setFriendRequestPrompts((prev) => prev.filter((item) => item.requestUserId !== key));
+  }, []);
+
   useEffect(() => {
     const timers = toastTimersRef.current;
     return () => {
@@ -614,6 +640,15 @@ function App() {
         if (entry?.removeTimer) clearTimeout(entry.removeTimer);
       });
       timers.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const promptTimers = friendRequestPromptTimersRef.current;
+    return () => {
+      promptTimers.forEach((timer) => clearTimeout(timer));
+      promptTimers.clear();
+      seenFriendRequestRef.current.clear();
     };
   }, []);
 
@@ -659,6 +694,57 @@ function App() {
       console.error('Friends load error:', e);
     }
   }, []);
+
+  const enqueueFriendRequestPrompt = useCallback((payload = {}) => {
+    const requestUserId = String(payload.request_user_id || payload.requestUserId || '').trim();
+    if (!requestUserId) return;
+
+    const now = Date.now();
+    const seenMap = seenFriendRequestRef.current;
+    seenMap.forEach((ts, key) => {
+      if (now - ts > FRIEND_REQUEST_DEDUPE_TTL_MS) seenMap.delete(key);
+    });
+    if (seenMap.has(requestUserId)) return;
+    seenMap.set(requestUserId, now);
+
+    const senderLabel = resolveFriendRequestSenderLabel(payload);
+    setFriendRequestPrompts((prev) => {
+      if (prev.some((item) => item.requestUserId === requestUserId)) return prev;
+      return [...prev, { requestUserId, senderLabel, busy: false }];
+    });
+
+    const existingTimer = friendRequestPromptTimersRef.current.get(requestUserId);
+    if (existingTimer) clearTimeout(existingTimer);
+    const timer = window.setTimeout(() => {
+      dismissFriendRequestPrompt(requestUserId);
+    }, FRIEND_REQUEST_PROMPT_MS);
+    friendRequestPromptTimersRef.current.set(requestUserId, timer);
+  }, [dismissFriendRequestPrompt]);
+
+  const handleFriendRequestPromptAction = useCallback(async (requestUserId, action) => {
+    const key = String(requestUserId || '').trim();
+    if (!key) return;
+
+    setFriendRequestPrompts((prev) => prev.map((item) => (
+      item.requestUserId === key ? { ...item, busy: true } : item
+    )));
+
+    try {
+      if (action === 'accept') {
+        await friends.accept(key);
+        showToast(appName, t('app.friendRequestAccepted'), 4200);
+      } else {
+        await friends.reject(key);
+        showToast(appName, t('app.friendRequestRejected'), 4200);
+      }
+    } catch (e) {
+      console.error('Friend request prompt action failed:', e);
+      showToast(appName, getLocalizedApiError(t, e, 'app.friendRequestActionFailed'), 6500);
+    } finally {
+      dismissFriendRequestPrompt(key);
+      loadFriends();
+    }
+  }, [appName, dismissFriendRequestPrompt, loadFriends, showToast, t]);
 
   const refreshLegalStatus = useCallback(async () => {
     try {
@@ -945,6 +1031,33 @@ function App() {
       return;
     }
 
+    if (type === 'friend_request_incoming') {
+      const requestUserId = String(data.requestUserId || data.request_user_id || '').trim();
+      const senderLabel = resolveFriendRequestSenderLabel(data);
+      const requestTitle = title || t('app.friendRequestIncomingTitle');
+      const requestBody = body || t('app.friendRequestIncomingBody', { name: senderLabel });
+
+      if (!fromPushEvent) {
+        loadFriends();
+        setScreen('friends');
+        return;
+      }
+
+      if (isAppForeground()) {
+        enqueueFriendRequestPrompt({ ...data, requestUserId, fromDisplayName: senderLabel });
+        return;
+      }
+
+      if (allowLocalNotification) {
+        await showLocalNotification({
+          title: requestTitle,
+          body: requestBody,
+          data: { ...data, requestUserId, deliveryId, channelId }
+        });
+      }
+      return;
+    }
+
     if (allowLocalNotification) {
       await showLocalNotification({
         title,
@@ -952,7 +1065,7 @@ function App() {
         data: { ...data, deliveryId, channelId }
       });
     }
-  }, [normalizeAdminNotice, notifyIncoming, showToast, shouldProcessDelivery]);
+  }, [enqueueFriendRequestPrompt, loadFriends, normalizeAdminNotice, notifyIncoming, setScreen, shouldProcessDelivery, showToast, t]);
 
   const playSound = useCallback(() => {
     try {
@@ -1255,6 +1368,31 @@ function App() {
             });
             setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
             break;
+          case 'friend_request_incoming': {
+            const requestUserId = String(data.request_user_id || data.requestUserId || '').trim();
+            const senderLabel = resolveFriendRequestSenderLabel(data);
+            const title = t('app.friendRequestIncomingTitle');
+            const body = t('app.friendRequestIncomingBody', { name: senderLabel });
+
+            loadFriends();
+
+            if (IS_NATIVE && !isAppForeground()) {
+              void showLocalNotification({
+                title,
+                body,
+                data: {
+                  type: 'friend_request_incoming',
+                  requestUserId,
+                  fromUserId: requestUserId,
+                  fromDisplayName: senderLabel,
+                  channelId: CHANNEL_IDS.messages
+                }
+              });
+            } else {
+              enqueueFriendRequestPrompt({ ...data, requestUserId, fromDisplayName: senderLabel });
+            }
+            break;
+          }
           case 'friend_refresh':
             loadFriends();
             break;
@@ -1290,11 +1428,36 @@ function App() {
       setWsStatus('disconnected');
       if (!intentionalCloseRef.current) scheduleReconnect();
     };
-  }, [activeLocale, appName, dropOutboxItem, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, t, user]);
+  }, [activeLocale, appName, dropOutboxItem, enqueueFriendRequestPrompt, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, t, user]);
 
   useEffect(() => {
     connectWsFnRef.current = connect;
   }, [connect]);
+  useEffect(() => {
+    if (!user || !IS_NATIVE) return;
+    let dispose = () => { };
+
+    (async () => {
+      dispose = await initNativeLocalNotifications({
+        onLocalAction: (event) => {
+          const extra = event?.notification?.extra || event?.notification?.data || {};
+          const type = extra?.type;
+          if (type === 'friend_request_incoming') {
+            loadFriends();
+            setScreen('friends');
+          }
+        }
+      });
+    })();
+
+    return () => {
+      try {
+        dispose();
+      } catch (e) {
+        if (IS_DEV) console.warn('Local notification dispose failed:', e?.message || e);
+      }
+    };
+  }, [loadFriends, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -1975,6 +2138,45 @@ function App() {
     </div>
   ), [dismissToast, notices, t]);
 
+  const friendRequestPromptStack = useMemo(() => (
+    <div className="friend-request-stack">
+      {friendRequestPrompts.map((prompt) => (
+        <div key={prompt.requestUserId} className="friend-request-card" role="status" aria-live="polite">
+          <button
+            className="friend-request-close"
+            onClick={() => dismissFriendRequestPrompt(prompt.requestUserId)}
+            aria-label={t('common.close')}
+            disabled={prompt.busy}
+          >
+            x
+          </button>
+          <div className="friend-request-tag">{t('app.friendRequestIncomingTitle')}</div>
+          <div className="friend-request-body">
+            {t('app.friendRequestIncomingBody', { name: prompt.senderLabel || 'TalkX' })}
+          </div>
+          <div className="friend-request-actions">
+            <button
+              type="button"
+              className="btn-neon"
+              onClick={() => handleFriendRequestPromptAction(prompt.requestUserId, 'reject')}
+              disabled={prompt.busy}
+            >
+              {t('app.friendRequestReject')}
+            </button>
+            <button
+              type="button"
+              className="btn-solid-purple"
+              onClick={() => handleFriendRequestPromptAction(prompt.requestUserId, 'accept')}
+              disabled={prompt.busy}
+            >
+              {t('app.friendRequestAccept')}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  ), [dismissFriendRequestPrompt, friendRequestPrompts, handleFriendRequestPromptAction, t]);
+
   const permissionOnboarding = IS_NATIVE && user && showPermissionOnboarding && (
     <div className="permissions-onboarding-overlay">
       <div className="permissions-onboarding-card glass-card" role="dialog" aria-modal="true" aria-labelledby="permissions-onboarding-title">
@@ -2033,6 +2235,7 @@ function App() {
     <>
       {content}
       {toastStack}
+      {friendRequestPromptStack}
       {permissionOnboarding}
       {legalReacceptModal}
     </>
@@ -2144,3 +2347,25 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

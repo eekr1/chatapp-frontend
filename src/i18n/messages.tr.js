@@ -1,4 +1,4 @@
-const messagesTr = {
+﻿const messagesTr = {
     common: {
         appName: 'TalkX',
         loading: 'Yukleniyor...',
@@ -207,6 +207,13 @@ const messagesTr = {
         photoReceived: 'Fotograf gonderdi',
         reportDelivered: 'Raporunuz iletildi.',
         friendRequestSent: 'Arkadaslik istegi gonderildi.',
+        friendRequestIncomingTitle: 'Yeni arkadaslik istegi',
+        friendRequestIncomingBody: '{name} size arkadaslik istegi gonderdi.',
+        friendRequestAccepted: 'Arkadaslik istegi kabul edildi.',
+        friendRequestRejected: 'Arkadaslik istegi reddedildi.',
+        friendRequestActionFailed: 'Arkadaslik istegi islemi tamamlanamadi.',
+        friendRequestAccept: 'Kabul Et',
+        friendRequestReject: 'Reddet',
         addFriendMissingUsername: 'Kullanici adi bilgisi yok.',
         addFriendFailed: 'Istek gonderilemedi.',
         reportReasonRequired: 'Rapor sebebi gerekli.',
@@ -252,3 +259,4 @@ const messagesTr = {
 };
 
 export default messagesTr;
+

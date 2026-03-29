@@ -1,4 +1,4 @@
-import { getGlobalLocale, toSupportedLocale, translate } from '../i18n';
+﻿import { getGlobalLocale, toSupportedLocale, translate } from '../i18n';
 
 const getPlugins = () => window.Capacitor?.Plugins || {};
 
@@ -338,6 +338,32 @@ export const initNativePush = async ({
     };
 };
 
+export const initNativeLocalNotifications = async ({ onLocalAction } = {}) => {
+    if (!isNativePlatform()) return () => { };
+    const { LocalNotifications } = getPlugins();
+    if (!LocalNotifications || !LocalNotifications.addListener || !onLocalAction) return () => { };
+
+    const listeners = [];
+    try {
+        const actionHandle = await LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+            onLocalAction(event);
+        });
+        listeners.push(actionHandle);
+    } catch (e) {
+        console.warn('Local notification listener setup failed:', e?.message || e);
+        return () => { };
+    }
+
+    return () => {
+        listeners.forEach((h) => {
+            try {
+                h.remove();
+            } catch (e) {
+                console.warn('Local notification listener remove failed:', e?.message || e);
+            }
+        });
+    };
+};
 export const showLocalNotification = async ({ title, body, data }) => {
     if (!isNativePlatform()) return false;
     const { LocalNotifications } = getPlugins();
@@ -374,3 +400,4 @@ export const showLocalNotification = async ({ title, body, data }) => {
 export const pickImageFromCamera = async () => pickNativeImage('CAMERA');
 
 export const pickImageFromGallery = async () => pickNativeImage('PHOTOS');
+

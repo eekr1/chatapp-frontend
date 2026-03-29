@@ -1,4 +1,4 @@
-const messagesEn = {
+﻿const messagesEn = {
     common: {
         appName: 'TalkX',
         loading: 'Loading...',
@@ -207,6 +207,13 @@ const messagesEn = {
         photoReceived: 'Sent a photo',
         reportDelivered: 'Your report has been sent.',
         friendRequestSent: 'Friend request sent.',
+        friendRequestIncomingTitle: 'New friend request',
+        friendRequestIncomingBody: '{name} sent you a friend request.',
+        friendRequestAccepted: 'Friend request accepted.',
+        friendRequestRejected: 'Friend request rejected.',
+        friendRequestActionFailed: 'Friend request action could not be completed.',
+        friendRequestAccept: 'Accept',
+        friendRequestReject: 'Decline',
         addFriendMissingUsername: 'Username information is missing.',
         addFriendFailed: 'Friend request could not be sent.',
         reportReasonRequired: 'Report reason is required.',
@@ -252,3 +259,4 @@ const messagesEn = {
 };
 
 export default messagesEn;
+
