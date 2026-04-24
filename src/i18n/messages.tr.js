@@ -162,6 +162,7 @@
         accept: 'KABUL',
         reject: 'RED',
         autoAcceptIn: '{seconds}s sonra otomatik kabul',
+        peerAcceptedHint: 'Karsi taraf seni kabul etti. Sen de kabul edersen hemen sohbete gecersiniz.',
         waitingPeer: 'Onayin alindi. Karsi taraf bekleniyor...',
         cancel: 'IPTAL ET',
         q1: 'Bugun seni en cok ne guldurdu?',

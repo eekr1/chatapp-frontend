@@ -162,6 +162,7 @@
         accept: 'ACCEPT',
         reject: 'DECLINE',
         autoAcceptIn: 'Auto-accept in {seconds}s',
+        peerAcceptedHint: 'The other user accepted you. If you accept too, chat starts instantly.',
         waitingPeer: 'Accepted. Waiting for the other user...',
         cancel: 'CANCEL',
         q1: 'What made you laugh the most today?',

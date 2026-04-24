@@ -9,6 +9,7 @@ const MatchScreen = ({ status, offer, onAccept, onReject, onCancel }) => {
 
     const isOffer = Boolean(offer && typeof offer === 'object');
     const isAccepted = Boolean(offer?.accepted) || status === 'match_waiting';
+    const showPeerAcceptedHint = Boolean(offer?.peerAccepted) && !isAccepted;
 
     const peerUsername = String(offer?.peerUsername || '').trim();
     const peerNickname = String(offer?.peerNickname || '').trim();
@@ -162,6 +163,20 @@ const MatchScreen = ({ status, offer, onAccept, onReject, onCancel }) => {
                             {t('match.accept')}
                         </button>
                     </div>
+                    {showPeerAcceptedHint && (
+                        <div style={{
+                            marginTop: 12,
+                            padding: '10px 12px',
+                            borderRadius: 12,
+                            background: 'rgba(76, 255, 180, 0.12)',
+                            border: '1px solid rgba(76, 255, 180, 0.35)',
+                            color: 'var(--text-main)',
+                            fontSize: '0.9rem',
+                            lineHeight: 1.35
+                        }}>
+                            {t('match.peerAcceptedHint')}
+                        </div>
+                    )}
                 </GlassCard>
             )}
 

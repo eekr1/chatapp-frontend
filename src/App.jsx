@@ -1261,11 +1261,15 @@ function App() {
               peerId: data.peerId || null,
               autoAcceptAt,
               timeoutMs,
+              peerAccepted: false,
               accepted: false
             });
             setScreen('matching');
             break;
           }
+          case 'match_offer_peer_accepted':
+            setPendingMatchOffer((prev) => (prev ? { ...prev, peerAccepted: true } : prev));
+            break;
           case 'match_offer_waiting':
             setStatus('match_waiting');
             setPendingMatchOffer((prev) => (prev ? { ...prev, accepted: true } : prev));
