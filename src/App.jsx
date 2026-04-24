@@ -412,6 +412,7 @@ function App() {
   const [peerName, setPeerName] = useState(null);
   const [peerUsername, setPeerUsername] = useState(null);
   const [peerId, setPeerId] = useState(null);
+  const [pendingMatchOffer, setPendingMatchOffer] = useState(null);
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [roomId, setRoomId] = useState(null);
   const [chatMode, setChatMode] = useState('anon');
@@ -1234,14 +1235,52 @@ function App() {
             setOnlineCount(data.count);
             break;
           case 'queued':
+            setPendingMatchOffer(null);
             setStatus('queued');
+            setScreen('matching');
+            break;
+          case 'match_offer': {
+            const fallbackName = t('chat.anonymous');
+            const autoAcceptAtRaw = Number(data.autoAcceptAt);
+            const autoAcceptAt = Number.isFinite(autoAcceptAtRaw) ? autoAcceptAtRaw : Date.now() + 8000;
+            playSound();
+            setChatMode('anon');
+            setStatus('match_offer');
+            setRoomId(null);
+            setMessages([]);
+            setPeerName(data.peerNickname || fallbackName);
+            setPeerUsername(data.peerUsername || null);
+            setPeerId(data.peerId || null);
+            setPendingMatchOffer({
+              matchId: data.matchId || null,
+              peerNickname: data.peerNickname || fallbackName,
+              peerUsername: data.peerUsername || '',
+              peerId: data.peerId || null,
+              autoAcceptAt,
+              accepted: false
+            });
+            setScreen('matching');
+            break;
+          }
+          case 'match_offer_waiting':
+            setStatus('match_waiting');
+            setPendingMatchOffer((prev) => (prev ? { ...prev, accepted: true } : prev));
+            break;
+          case 'match_offer_closed':
+            setPendingMatchOffer(null);
+            setStatus('queued');
+            if (data.reason === 'peer_rejected') {
+              showToast(appName, t('app.matchPeerRejected'), 3200);
+            } else if (data.reason === 'peer_cancelled' || data.reason === 'peer_disconnected') {
+              showToast(appName, t('app.matchPeerLeft'), 3200);
+            }
             setScreen('matching');
             break;
           case 'debug':
             if (IS_DEV) console.log('[SERVER DEBUG]', data.msg, data);
             break;
           case 'matched':
-            playSound();
+            setPendingMatchOffer(null);
             setStatus('matched');
             setRoomId(data.roomId);
             setPeerName(data.peerNickname || t('chat.anonymous'));
@@ -1657,6 +1696,7 @@ function App() {
     setPeerName(null);
     setPeerUsername(null);
     setPeerId(null);
+    setPendingMatchOffer(null);
     setIsPeerTyping(false);
     setRoomId(null);
     setChatMode('anon');
@@ -1688,13 +1728,48 @@ function App() {
       return;
     }
     setChatMode('anon');
+    setPendingMatchOffer(null);
+    setRoomId(null);
+    setMessages([]);
     ws.current?.send(JSON.stringify({ type: 'joinQueue' }));
     setScreen('matching');
+  };
+
+  const handleMatchAccept = () => {
+    if (!pendingMatchOffer) return;
+    if (!isWsReady()) {
+      showToast(appName, t('app.reconnecting'), 4500);
+      connectWsFnRef.current();
+      return;
+    }
+    setStatus('match_waiting');
+    setPendingMatchOffer((prev) => (prev ? { ...prev, accepted: true } : prev));
+    ws.current?.send(JSON.stringify({
+      type: 'matchDecision',
+      matchId: pendingMatchOffer.matchId || undefined,
+      decision: 'accept'
+    }));
+  };
+
+  const handleMatchReject = () => {
+    if (!pendingMatchOffer) return;
+    if (!isWsReady()) {
+      showToast(appName, t('app.matchDecisionFailed'), 4500);
+      return;
+    }
+    setPendingMatchOffer(null);
+    setStatus('queued');
+    ws.current?.send(JSON.stringify({
+      type: 'matchDecision',
+      matchId: pendingMatchOffer.matchId || undefined,
+      decision: 'reject'
+    }));
   };
 
   const handleStartFriendChat = async (friend) => {
     if (IS_DEV) console.log('Selected friend:', friend);
     setActiveFriend(friend);
+    setPendingMatchOffer(null);
     setRoomId(null);
     setChatMode('friends');
     setPeerName(friend.display_name || friend.username);
@@ -1798,7 +1873,8 @@ function App() {
 
   const handleLeaveChat = () => {
     if (chatMode === 'anon') {
-      if (status === 'queued') {
+      const isQueueLikeState = status === 'queued' || status === 'match_offer' || status === 'match_waiting' || screen === 'matching';
+      if (isQueueLikeState) {
         ws.current?.send(JSON.stringify({ type: 'leaveQueue' }));
       } else {
         ws.current?.send(JSON.stringify({ type: 'leave' }));
@@ -1808,6 +1884,10 @@ function App() {
     setScreen(chatMode === 'friends' ? 'friends' : 'home');
     setMessages([]);
     setRoomId(null);
+    setPeerName(null);
+    setPeerId(null);
+    setPeerUsername(null);
+    setPendingMatchOffer(null);
     setActiveFriend(null);
   };
 
@@ -2328,8 +2408,11 @@ function App() {
   if (screen === 'matching') {
     return withToasts(
       <MatchScreen
+        status={status}
+        offer={pendingMatchOffer}
+        onAccept={handleMatchAccept}
+        onReject={handleMatchReject}
         onCancel={handleLeaveChat}
-        onMatchMock={() => undefined}
       />
     );
   }
