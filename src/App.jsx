@@ -1241,8 +1241,11 @@ function App() {
             break;
           case 'match_offer': {
             const fallbackName = t('chat.anonymous');
-            const autoAcceptAtRaw = Number(data.autoAcceptAt);
-            const autoAcceptAt = Number.isFinite(autoAcceptAtRaw) ? autoAcceptAtRaw : Date.now() + 8000;
+            const timeoutMsRaw = Number(data.timeoutMs);
+            const timeoutMs = Number.isFinite(timeoutMsRaw)
+              ? Math.max(1000, Math.min(20000, Math.round(timeoutMsRaw)))
+              : 8000;
+            const autoAcceptAt = Date.now() + timeoutMs;
             playSound();
             setChatMode('anon');
             setStatus('match_offer');
@@ -1257,6 +1260,7 @@ function App() {
               peerUsername: data.peerUsername || '',
               peerId: data.peerId || null,
               autoAcceptAt,
+              timeoutMs,
               accepted: false
             });
             setScreen('matching');
