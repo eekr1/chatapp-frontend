@@ -1259,11 +1259,16 @@ function App() {
           case 'direct_message_ack':
             handleDirectMessageAck(data);
             break;
+          case 'success':
+            if (data.message) {
+              showToast(appName, data.message, 4500);
+            }
+            break;
           case 'error':
             if (data.code) setLastErrorCode(String(data.code).slice(0, 120));
             if (data.clientMsgId) {
-              dropOutboxItem(data.clientMsgId);
-              setMessageSendState(data.clientMsgId, { sendState: 'failed', errorCode: data.code || 'SERVER_ERROR' });
+                dropOutboxItem(data.clientMsgId);
+                setMessageSendState(data.clientMsgId, { sendState: 'failed', errorCode: data.code || 'SERVER_ERROR' });
             }
             if (data.code === 'AUTH_ERROR') {
               ackTimersRef.current.forEach((t) => clearTimeout(t));
@@ -1875,19 +1880,30 @@ function App() {
 
   const handleReport = () => {
     const reason = window.prompt(t('app.reportPrompt'));
-    if (!reason || !String(reason).trim()) {
+    const cleanReason = String(reason || '').trim();
+    if (!cleanReason) {
       showToast(appName, t('app.reportReasonRequired'), 5000);
       return;
     }
-    if (!isWsReady()) return;
-
-    if (chatMode === 'anon' && roomId) {
-      ws.current.send(JSON.stringify({ type: 'report', roomId, reason }));
-    } else if (chatMode === 'friends' && activeFriend) {
-      ws.current.send(JSON.stringify({ type: 'report', targetUserId: activeFriend.user_id, reason }));
+    if (!isWsReady()) {
+      showToast(appName, t('app.reconnecting'), 4500);
+      return;
     }
 
-    showToast(appName, t('app.reportDelivered'), 4500);
+    const payload = { type: 'report', reason: cleanReason };
+    if (chatMode === 'anon') {
+      if (roomId) payload.roomId = roomId;
+      if (peerId) payload.targetUserId = peerId;
+    } else if (chatMode === 'friends' && activeFriend?.user_id) {
+      payload.targetUserId = activeFriend.user_id;
+    }
+
+    if (!payload.roomId && !payload.targetUserId) {
+      showToast(appName, t('app.supportFailed'), 5000);
+      return;
+    }
+
+    ws.current.send(JSON.stringify(payload));
   };
 
   const handleSupportReport = async ({ subject, description, email, mediaFiles = [] }) => {
