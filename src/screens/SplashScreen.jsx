@@ -21,17 +21,19 @@ const SplashScreen = ({ onFinish }) => {
             </div>
             <p style={{
                 color: 'var(--text-dim)',
-                letterSpacing: '4px',
+                letterSpacing: '1.5px',
                 fontSize: '0.9rem',
-                textTransform: 'uppercase',
-                opacity: 0.8
+                textAlign: 'center',
+                maxWidth: 320,
+                padding: '0 16px',
+                opacity: 0.9
             }} className="animate-slide-up">
                 {t('splash.subtitle')}
             </p>
 
             {/* Abstract Neon Circle Spinner */}
             <div style={{
-                marginTop: 50,
+                marginTop: 30,
                 width: 50,
                 height: 50,
                 borderRadius: '50%',

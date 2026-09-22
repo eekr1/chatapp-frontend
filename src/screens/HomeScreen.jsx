@@ -341,7 +341,15 @@ const HomeScreen = ({
                 </div>
             </header>
 
-            <main className="center-flex" style={{ flex: 1, gap: 40 }}>
+            <main className="center-flex" style={{ flex: 1, gap: 24 }}>
+                <div style={{ maxWidth: 680, padding: '0 20px', textAlign: 'center' }}>
+                    <p style={{ margin: 0, color: 'var(--text)', lineHeight: 1.55, fontWeight: 600 }}>
+                        {t('home.productPromise')}
+                    </p>
+                    <p style={{ margin: '8px 0 0', color: 'var(--text-dim)', lineHeight: 1.45, fontSize: '0.88rem' }}>
+                        {t('home.servicePrivacy')}
+                    </p>
+                </div>
                 <div
                     className="center-flex"
                     style={{ gap: 15, cursor: 'pointer', transition: 'transform 0.2s', width: '100%' }}
@@ -360,6 +368,7 @@ const HomeScreen = ({
                         <MaskIcon />
                     </GlassCard>
                     <h3 style={{ fontSize: '1.2rem', color: 'var(--primary)', letterSpacing: 1 }}>{t('home.anonymous')}</h3>
+                    <p style={{ margin: 0, color: 'var(--text-dim)', textAlign: 'center', fontSize: '0.9rem' }}>{t('home.anonymousNote')}</p>
                 </div>
 
                 <div style={{ width: 50, height: 1, background: 'var(--glass-border)' }} />
@@ -402,6 +411,7 @@ const HomeScreen = ({
                         )}
                     </GlassCard>
                     <h3 style={{ fontSize: '1.2rem', color: 'var(--accent)', letterSpacing: 1 }}>{t('home.friends')}</h3>
+                    <p style={{ margin: 0, color: 'var(--text-dim)', textAlign: 'center', fontSize: '0.9rem' }}>{t('home.friendsNote')}</p>
                 </div>
             </main>
 

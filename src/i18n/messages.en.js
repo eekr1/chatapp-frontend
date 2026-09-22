@@ -33,13 +33,15 @@
         genericError: 'Something went wrong.'
     },
     splash: {
-        subtitle: 'Cyber Connect'
+        subtitle: 'Global anonymous one-on-one chat'
     },
     home: {
+        productPromise: 'Stay anonymous to the other person in a random global one-on-one chat. If you both choose, become friends and continue with persistent messaging.',
+        servicePrivacy: 'Anonymity is between users. TalkX processes data under its Privacy Policy to provide and protect the service.',
         anonymous: 'ANONYMOUS',
-        anonymousNote: 'Temporary messages, no photos.',
+        anonymousNote: 'Temporary messages; photos are disabled.',
         friends: 'FRIENDS',
-        friendsNote: 'History and photos are for friend chats only.',
+        friendsNote: 'Persistent message history; controlled single-use photos.',
         logout: 'Logout',
         settingsTitle: 'Settings',
         reportIssue: 'Report Issue',

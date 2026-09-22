@@ -33,13 +33,15 @@
         genericError: 'Bir hata olustu.'
     },
     splash: {
-        subtitle: 'Cyber Connect'
+        subtitle: 'Global anonim birebir sohbet'
     },
     home: {
+        productPromise: 'Global rastgele birebir sohbette diger kullaniciya anonim kal. Istersen sohbetten sonra arkadas olup kalici mesajlasmaya gec.',
+        servicePrivacy: 'Anonimlik kullanicilar arasindadir. TalkX, hizmeti sunmak ve guvenligi saglamak icin verileri Gizlilik Politikasi kapsaminda isler.',
         anonymous: 'ANONIM',
-        anonymousNote: 'Mesajlar gecici, fotograf yok.',
+        anonymousNote: 'Gecici mesajlar; fotograf yok.',
         friends: 'ARKADASLAR',
-        friendsNote: 'Gecmis ve fotograf sadece arkadas sohbetinde.',
+        friendsNote: 'Kalici mesaj gecmisi; kontrollu tek kullanimlik fotograf.',
         logout: 'Cikis',
         settingsTitle: 'Ayarlar',
         reportIssue: 'Sorun Bildir',

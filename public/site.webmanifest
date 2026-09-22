@@ -1,7 +1,7 @@
 {
   "name": "TalkX",
   "short_name": "TalkX",
-  "description": "TalkX real-time chat",
+  "description": "Global anonymous one-on-one chat that can continue as persistent friend messaging.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0e17",
