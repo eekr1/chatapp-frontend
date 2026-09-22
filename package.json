@@ -7,14 +7,29 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mobile:sync:android": "npx cap sync android",
+    "mobile:bump:android": "powershell -ExecutionPolicy Bypass -File ./scripts/bump-android-version.ps1",
+    "mobile:prepare:android": "npm run build && npm run mobile:sync:android",
+    "mobile:verify:android-assets": "powershell -ExecutionPolicy Bypass -File ./scripts/check-android-web-assets.ps1",
+    "mobile:release:android": "npm run mobile:prepare:android && npm run mobile:verify:android-assets && npm run mobile:bump:android && cd android && gradlew.bat bundleRelease",
+    "postinstall": "patch-package"
   },
   "dependencies": {
+    "@capacitor/android": "8.1.0",
+    "@capacitor/app": "8.0.1",
+    "@capacitor/camera": "8.0.1",
+    "@capacitor/core": "8.1.0",
+    "@capacitor/keyboard": "8.0.0",
+    "@capacitor/local-notifications": "8.0.1",
+    "@capacitor/push-notifications": "8.0.1",
+    "@capacitor/status-bar": "8.0.1",
     "axios": "^1.13.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.1.0",
     "@eslint/js": "^9.39.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
@@ -23,6 +38,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "patch-package": "8.0.1",
     "vite": "^7.2.4"
   }
 }

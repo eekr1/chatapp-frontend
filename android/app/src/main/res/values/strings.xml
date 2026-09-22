@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TalkX</string>
+    <string name="title_activity_main">TalkX</string>
+    <string name="package_name">com.talkx.app</string>
+    <string name="custom_url_scheme">com.talkx.app</string>
+</resources>

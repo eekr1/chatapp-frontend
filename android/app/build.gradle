@@ -1,0 +1,101 @@
+apply plugin: 'com.android.application'
+
+def extractAssetRefs = { File indexFile ->
+    if (!indexFile.exists()) {
+        throw new GradleException("Missing index file: ${indexFile}")
+    }
+
+    def raw = indexFile.getText('UTF-8')
+    def jsMatcher = (raw =~ /src="\/assets\/([^"]+\.js)"/)
+    def cssMatcher = (raw =~ /href="\/assets\/([^"]+\.css)"/)
+
+    if (!jsMatcher.find() || !cssMatcher.find()) {
+        throw new GradleException("Unable to parse JS/CSS asset refs from: ${indexFile}")
+    }
+
+    return [js: jsMatcher.group(1), css: cssMatcher.group(1)]
+}
+
+android {
+    namespace = "com.talkx.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    ndkVersion "30.0.14904198"
+    defaultConfig {
+        applicationId "com.talkx.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 7
+        versionName "1.0.5"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            ndk {
+                debugSymbolLevel 'SYMBOL_TABLE'
+            }
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation platform('com.google.firebase:firebase-bom:33.10.0')
+    implementation 'com.google.firebase:firebase-crashlytics'
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+tasks.register('verifyAndroidBundledAssets') {
+    group = 'verification'
+    description = 'Fails the build when Android bundled web assets are stale.'
+
+    doLast {
+        File distIndex = rootProject.file('../dist/index.html')
+        File bundledIndex = project.file('src/main/assets/public/index.html')
+
+        def distRefs = extractAssetRefs(distIndex)
+        def bundledRefs = extractAssetRefs(bundledIndex)
+
+        if (distRefs.js != bundledRefs.js || distRefs.css != bundledRefs.css) {
+            throw new GradleException(
+                "Android assets stale. Run npm run mobile:prepare:android " +
+                "(dist: ${distRefs.js}, ${distRefs.css}; bundled: ${bundledRefs.js}, ${bundledRefs.css})"
+            )
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn(tasks.named('verifyAndroidBundledAssets'))
+}
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+        apply plugin: 'com.google.firebase.crashlytics'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services and crashlytics plugins were not applied")
+}
