@@ -193,11 +193,11 @@ const resolveNetworkType = () => {
 const SUPPORT_SUBJECTS = new Set(['connection', 'message', 'photo', 'other']);
 const SUPPORT_SUBJECT_ALIAS = new Map([
   ['baglanti', 'connection'],
-  ['baÄŸlantÄ±', 'connection'],
+  ['bağlantı', 'connection'],
   ['mesaj', 'message'],
   ['foto', 'photo'],
   ['diger', 'other'],
-  ['diÄŸer', 'other']
+  ['diğer', 'other']
 ]);
 
 const normalizeSupportSubject = (value) => {
@@ -400,7 +400,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [onlineCount, setOnlineCount] = useState(0);
   const [status, setStatus] = useState('disconnected');
-  const [wsStatus, setWsStatus] = useState('disconnected');
+  const [, setWsStatus] = useState('disconnected');
 
   const [friendList, setFriendList] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);

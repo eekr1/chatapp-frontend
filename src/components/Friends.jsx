@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { friends, getAvatar } from '../api';
+import { friends } from '../api';
 
 export default function Friends({ onClose, onStartChat }) {
     const [list, setList] = useState({ friends: [], incoming: [], outgoing: [] });
-    const [loading, setLoading] = useState(true);
+    const [, setLoading] = useState(true);
     const [targetUsername, setTargetUsername] = useState('');
     const [msg, setMsg] = useState('');
 

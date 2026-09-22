@@ -105,6 +105,7 @@ const ChatScreen = ({
 
     useEffect(() => {
         if (!isFriendMode || isChatEnded) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset transient UI when mode ends.
             setMediaMenuOpen(false);
             setImageError('');
         }

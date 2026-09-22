@@ -5,7 +5,7 @@ import { useI18n } from '../i18n';
 const MatchScreen = ({ status, offer, onAccept, onReject, onCancel }) => {
     const { t } = useI18n();
     const [questionIndex, setQuestionIndex] = useState(0);
-    const [nowMs, setNowMs] = useState(Date.now());
+    const [nowMs, setNowMs] = useState(() => Date.now());
 
     const isOffer = Boolean(offer && typeof offer === 'object');
     const isAccepted = Boolean(offer?.accepted) || status === 'match_waiting';

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { profile, getAvatar } from '../api';
+import { profile } from '../api';
 
 export default function Profile({ onClose }) {
     const [data, setData] = useState({ display_name: '', bio: '', avatar_url: '', id: '' });
