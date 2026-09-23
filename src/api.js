@@ -48,8 +48,8 @@ const persistLastErrorCode = (code) => {
 
 const deriveErrorCode = (error) => {
     const data = error?.response?.data || {};
-    if (typeof data.code === 'string' && data.code.trim()) return data.code.trim();
     if (typeof data.errorCode === 'string' && data.errorCode.trim()) return data.errorCode.trim();
+    if (typeof data.code === 'string' && data.code.trim()) return data.code.trim();
 
     const status = Number(error?.response?.status);
     if (Number.isInteger(status) && status > 0) return `HTTP_${status}`;
@@ -87,16 +87,16 @@ export const auth = {
         ...legalPayload
     }),
     login: (username, password, device_id) => api.post('/auth/login', { username, password, device_id }),
-    logout: async () => {
+    logout: async (scope = 'current') => {
         const token = localStorage.getItem('session_token');
         try {
             // Best-effort: try to invalidate server session if token exists.
             if (token) {
-                await api.post('/auth/logout', null, {
+                await api.post(scope === 'all' ? '/auth/logout-all' : '/auth/logout', null, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
             } else {
-                await api.post('/auth/logout');
+                await api.post(scope === 'all' ? '/auth/logout-all' : '/auth/logout');
             }
         } catch {
             // Ignore network/server errors; local logout should still succeed.
@@ -111,7 +111,11 @@ export const profile = {
     getLegalStatus: () => api.get('/api/me/legal-status'),
     acceptLegalVersions: (terms_version, privacy_version) => api.post('/api/me/legal-accept', { terms_version, privacy_version }),
     updateMe: (data) => api.put('/api/me/profile', data),
-    changePassword: (current_password, new_password) => api.put('/api/me/password', { current_password, new_password }),
+    changePassword: async (current_password, new_password) => {
+        const response = await api.put('/api/me/password', { current_password, new_password });
+        localStorage.removeItem('session_token');
+        return response;
+    },
     requestDeletion: (current_password, confirm_text) => api.post('/api/me/delete-request', { current_password, confirm_text })
 };
 
@@ -166,13 +170,11 @@ export const getAvatar = (seed) => {
 };
 
 export const getLocalizedApiError = (t, error, fallbackKey = 'errors.SERVER_ERROR') => {
-    const code = String(error?.response?.data?.code || '').trim();
+    const code = String(error?.response?.data?.errorCode || error?.response?.data?.code || '').trim();
     if (code) {
         const translated = t(`errors.${code}`, {}, null);
         if (translated && translated !== `errors.${code}`) return translated;
     }
-    const message = String(error?.response?.data?.error || '').trim();
-    if (message) return message;
     return t(fallbackKey, {}, 'Server error.');
 };
 

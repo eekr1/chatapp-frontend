@@ -688,8 +688,8 @@ function App() {
           ...prev,
           open: true,
           error: '',
-          required: e?.response?.data?.required_versions || prev.required,
-          accepted: e?.response?.data?.accepted_versions || prev.accepted
+          required: e?.response?.data?.required_versions || e?.response?.data?.metadata?.required_versions || prev.required,
+          accepted: e?.response?.data?.accepted_versions || e?.response?.data?.metadata?.accepted_versions || prev.accepted
         }));
       }
       console.error('Friends load error:', e);
@@ -1214,7 +1214,9 @@ function App() {
         deviceId: DEVICE_ID,
         token: localStorage.getItem('session_token'),
         platform: IS_NATIVE ? 'android' : 'web',
-        lang: activeLocale
+        lang: activeLocale,
+        appVersion: APP_VERSION,
+        capabilities: ['error-envelope-v1', 'session-revoke-v1']
       }));
     };
 
@@ -1312,12 +1314,14 @@ function App() {
             }
             break;
           case 'error':
-            if (data.code) setLastErrorCode(String(data.code).slice(0, 120));
+            {
+            const errorCode = String(data.errorCode || data.code || 'SERVER_ERROR').slice(0, 120);
+            setLastErrorCode(errorCode);
             if (data.clientMsgId) {
                 dropOutboxItem(data.clientMsgId);
-                setMessageSendState(data.clientMsgId, { sendState: 'failed', errorCode: data.code || 'SERVER_ERROR' });
+                setMessageSendState(data.clientMsgId, { sendState: 'failed', errorCode });
             }
-            if (data.code === 'AUTH_ERROR') {
+            if (errorCode === 'AUTH_ERROR' || errorCode === 'SESSION_REVOKED') {
               ackTimersRef.current.forEach((t) => clearTimeout(t));
               ackTimersRef.current.clear();
               inFlightRef.current.clear();
@@ -1328,10 +1332,12 @@ function App() {
               localStorage.removeItem('session_token');
               setUser(null);
               setScreen('splash');
-            } else if (data.message) {
-              showToast(appName, data.message, 5000);
+            } else {
+              const localized = t(`errors.${errorCode}`, {}, null);
+              showToast(appName, localized && localized !== `errors.${errorCode}` ? localized : t('errors.SERVER_ERROR'), 5000);
             }
             break;
+            }
           case 'direct_message': {
             const senderId = data.fromUserId;
             const deliveryId = data.deliveryId || null;

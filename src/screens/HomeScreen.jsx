@@ -208,6 +208,7 @@ const HomeScreen = ({
             setSettingsNewPassword('');
             setSettingsShowPassword(false);
             setSettingsMessage(response?.data?.message || t('home.passwordUpdated'));
+            if (typeof onLogout === 'function') await onLogout();
         } catch (error) {
             setSettingsError(getLocalizedApiError(t, error, 'home.passwordUpdateFailed'));
         } finally {
