@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
 import { useI18n } from '../i18n';
+import { resolvePresenceText } from '../state/recoveryState';
 
 const BackIcon = () => (
     <svg className="friends-back-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -110,6 +111,7 @@ const FriendsScreen = ({
                         friends.map((f) => {
                             const count = unreadCounts[f.user_id] || 0;
                             const name = f.display_name || f.username;
+                            const presenceLabel = resolvePresenceText(f, t);
                             return (
                                 <GlassCard
                                     key={f.user_id}
@@ -117,7 +119,7 @@ const FriendsScreen = ({
                                     style={{ padding: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 15, minWidth: 0 }}>
-                                        <div className="friends-avatar">
+                                        <div className="friends-avatar" aria-label={`${name}: ${presenceLabel.text}`}>
                                             <span className="friends-avatar-initial">{getAvatarInitial(name)}</span>
                                             {count > 0 && <span className="friends-avatar-badge">{count}</span>}
                                             {f.is_online && <span className="friends-avatar-online" title={t('friends.onlineTitle')} />}
@@ -127,6 +129,7 @@ const FriendsScreen = ({
                                                 {name}
                                             </h4>
                                             <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>@{f.username}</span>
+                                            <span className={`presence-status is-${presenceLabel.tone}`}>{presenceLabel.text}</span>
                                         </div>
                                     </div>
 

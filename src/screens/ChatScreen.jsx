@@ -5,6 +5,7 @@ import {
     pickImageFromGallery
 } from '../utils/nativeBridge';
 import { useI18n } from '../i18n';
+import { resolvePresenceText } from '../state/recoveryState';
 
 const SendIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -74,11 +75,13 @@ const ChatScreen = ({
     onCloseImage,
     imageViewer,
     onAddFriend,
+    friendPresence = null,
 }) => {
     const { t } = useI18n();
     const [inputValue, setInputValue] = useState('');
     const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
     const [imageError, setImageError] = useState('');
+    const [, setPresenceClock] = useState(0);
     const [randomName] = useState(() => COOL_NAMES[Math.floor(Math.random() * COOL_NAMES.length)]);
     const endRef = useRef(null);
     const cameraInputRef = useRef(null);
@@ -87,6 +90,15 @@ const ChatScreen = ({
 
     const displayName = peerName || randomName || t('chat.anonymous');
     const avatarInitial = getAvatarInitial(displayName);
+    const presenceLabel = isFriendMode
+        ? resolvePresenceText(friendPresence || { presence: 'unknown' }, t)
+        : { text: isChatEnded ? t('chat.ended') : t('presence.connected'), tone: isChatEnded ? 'offline' : 'online' };
+
+    useEffect(() => {
+        if (!isFriendMode || friendPresence?.presence_state !== 'offline') return undefined;
+        const timer = window.setInterval(() => setPresenceClock((value) => value + 1), 60000);
+        return () => window.clearInterval(timer);
+    }, [friendPresence?.presence_state, isFriendMode]);
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -197,8 +209,12 @@ const ChatScreen = ({
                     </div>
                     <div>
                         <h3 style={{ fontSize: '1rem', color: isFriendMode ? 'var(--accent)' : 'var(--primary)' }}>{displayName}</h3>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>
-                            {isChatEnded ? t('chat.ended') : t('common.online')}
+                        <span
+                            className={`presence-status is-${presenceLabel.tone}`}
+                            aria-label={presenceLabel.text}
+                            style={{ fontSize: '0.75rem' }}
+                        >
+                            {presenceLabel.text}
                         </span>
                     </div>
                 </div>

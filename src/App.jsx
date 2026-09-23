@@ -16,6 +16,12 @@ import Auth from './components/Auth';
 import { BACK_ACTIONS, resolveBackAction } from './app/navigationPolicy';
 import { storeAuthNotice } from './auth/authPolicy';
 import { shouldIgnoreRealtimeEvent } from './state/realtimeDomains';
+import {
+  applyPresenceUpdate,
+  parseRecoverySnapshot,
+  reconcileUnread,
+  shouldAcceptServerEvent
+} from './state/recoveryState';
 
 import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
@@ -56,6 +62,8 @@ const DELIVERY_DEDUPE_MAX = 500;
 const WS_RETRY_STEPS_MS = [1000, 2000, 5000, 10000, 20000, 30000];
 const WS_RETRY_MAX_MS = 30000;
 const OUTBOX_STORAGE_KEY = 'talkx_pending_outbox_v1';
+const RECOVERY_TOKEN_KEY = 'talkx_recovery_token_v1';
+const RECOVERY_EPOCH_KEY = 'talkx_recovery_epoch_v1';
 const OUTBOX_MAX_ITEMS = 100;
 const OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;
 const OUTBOX_ACK_TIMEOUT_MS = 15000;
@@ -72,7 +80,9 @@ const INITIAL_IMAGE_VIEWER = Object.freeze({
   status: 'idle',
   mediaId: null,
   dataUrl: null,
-  error: null
+  error: null,
+  ownerMode: null,
+  ownerId: null
 });
 const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const nowTs = () => Date.now();
@@ -448,6 +458,8 @@ function App() {
   const reconnectAttemptRef = useRef(0);
   const shouldReconnectRef = useRef(false);
   const wsAuthenticatedRef = useRef(false);
+  const recoveryReadyRef = useRef(false);
+  const recoveryConnectionRef = useRef({ ready: false, connectionId: null, serverEpoch: null, stateRevision: 0 });
   const wsConfigWarnedRef = useRef(false);
   const intentionalCloseRef = useRef(false);
   const typingTimeoutRef = useRef(null);
@@ -468,6 +480,8 @@ function App() {
   const flushOutboxFnRef = useRef(() => { });
   const connectWsFnRef = useRef(() => { });
   const backPressAtRef = useRef(0);
+  const friendHistoryRequestRef = useRef(0);
+  const leaveIntentRef = useRef(false);
 
   const IMAGE_FETCH_TIMEOUT_MS = 12000;
   const [imageViewer, setImageViewer] = useState(() => ({ ...INITIAL_IMAGE_VIEWER }));
@@ -677,7 +691,11 @@ function App() {
           return { data: { blocked: [] } };
         })
       ]);
-      setFriendList(listRes.data.friends || []);
+      const loadedFriends = listRes.data.friends || [];
+      setFriendList(loadedFriends);
+      setActiveFriend((current) => current
+        ? (loadedFriends.find((friend) => friend.user_id === current.user_id) || current)
+        : current);
       setFriendRequests(listRes.data.incoming || []);
       setBlockedUsers(blockedRes.data.blocked || []);
 
@@ -1088,7 +1106,7 @@ function App() {
   }, []);
 
   const isWsReady = useCallback(() => (
-    ws.current?.readyState === WebSocket.OPEN && wsAuthenticatedRef.current
+    ws.current?.readyState === WebSocket.OPEN && wsAuthenticatedRef.current && recoveryReadyRef.current
   ), []);
 
   const handleDirectMessageAck = useCallback((data = {}) => {
@@ -1208,6 +1226,8 @@ function App() {
 
     setWsStatus(reconnectAttemptRef.current > 0 ? 'reconnecting' : 'connecting');
     wsAuthenticatedRef.current = false;
+    recoveryReadyRef.current = false;
+    recoveryConnectionRef.current = { ready: false, connectionId: null, serverEpoch: null, stateRevision: 0 };
     const socket = new WebSocket(wsUrl);
     ws.current = socket;
 
@@ -1220,7 +1240,9 @@ function App() {
         platform: IS_NATIVE ? 'android' : 'web',
         lang: activeLocale,
         appVersion: APP_VERSION,
-        capabilities: ['error-envelope-v1', 'session-revoke-v1']
+        capabilities: ['error-envelope-v1', 'session-revoke-v1', 'recovery-v1', 'presence-v1'],
+        recoveryToken: sessionStorage.getItem(RECOVERY_TOKEN_KEY) || undefined,
+        serverEpoch: sessionStorage.getItem(RECOVERY_EPOCH_KEY) || undefined
       }));
     };
 
@@ -1229,6 +1251,15 @@ function App() {
       try {
         const data = JSON.parse(event.data);
         if (IS_DEV) console.log('[WS]', data.type, data);
+        if (!['hello', 'welcome', 'recovery_snapshot', 'onlineCount', 'error'].includes(data.type)
+          && data.connectionId
+          && !shouldAcceptServerEvent(data, recoveryConnectionRef.current)) return;
+        if (data.connectionId && recoveryConnectionRef.current.ready) {
+          recoveryConnectionRef.current.stateRevision = Math.max(
+            recoveryConnectionRef.current.stateRevision,
+            Number(data.stateRevision) || 0
+          );
+        }
         if (shouldIgnoreRealtimeEvent(data.type, {
           chatMode: chatModeRef.current,
           screen: screenRef.current
@@ -1238,9 +1269,82 @@ function App() {
           case 'welcome':
             wsAuthenticatedRef.current = true;
             reconnectAttemptRef.current = 0;
+            setWsStatus('reconnecting');
+            break;
+          case 'recovery_snapshot': {
+            const parsed = parseRecoverySnapshot(data);
+            if (!parsed.ok) {
+              sessionStorage.removeItem(RECOVERY_TOKEN_KEY);
+              sessionStorage.removeItem(RECOVERY_EPOCH_KEY);
+              recoveryReadyRef.current = false;
+              recoveryConnectionRef.current = { ready: false, connectionId: null, serverEpoch: null, stateRevision: 0 };
+              setPendingMatchOffer(null);
+              setRoomId(null);
+              if (chatModeRef.current === 'anon') {
+                setMessages([]);
+                setStatus('disconnected');
+              }
+              break;
+            }
+            const snapshot = parsed.value;
+            recoveryConnectionRef.current = {
+              ready: true,
+              connectionId: snapshot.connectionId,
+              serverEpoch: snapshot.serverEpoch,
+              stateRevision: snapshot.stateRevision
+            };
+            recoveryReadyRef.current = true;
+            if (snapshot.recoveryToken) sessionStorage.setItem(RECOVERY_TOKEN_KEY, snapshot.recoveryToken);
+            sessionStorage.setItem(RECOVERY_EPOCH_KEY, snapshot.serverEpoch);
+            setUnreadCounts(reconcileUnread(snapshot.unread));
+
+            const active = snapshot.active;
+            if (snapshot.result !== 'resumed' || active.kind === 'idle') {
+              setPendingMatchOffer(null);
+              setRoomId(null);
+              if (chatModeRef.current === 'anon' && ['matching', 'chat'].includes(screenRef.current)) {
+                setMessages([]);
+                setPeerName(null);
+                setPeerUsername(null);
+                setPeerId(null);
+                setStatus('idle');
+                setScreen('home');
+              }
+            } else if (active.kind === 'queue') {
+              setPendingMatchOffer(null);
+              setRoomId(null);
+              setStatus('queued');
+              setChatMode('anon');
+              setScreen('matching');
+            } else if (active.kind === 'offer') {
+              setRoomId(null);
+              setChatMode('anon');
+              setStatus(active.decision === 'accepted' ? 'match_waiting' : 'match_offer');
+              setPendingMatchOffer({
+                matchId: active.matchId,
+                peerNickname: active.peerNickname || t('chat.anonymous'),
+                peerUsername: active.peerUsername || '',
+                peerId: active.peerId || null,
+                autoAcceptAt: Number(active.autoAcceptAt),
+                timeoutMs: Number(active.timeoutMs) || 0,
+                peerAccepted: false,
+                accepted: active.decision === 'accepted'
+              });
+              setScreen('matching');
+            } else if (active.kind === 'anonymous_room') {
+              setPendingMatchOffer(null);
+              setChatMode('anon');
+              setRoomId(active.roomId);
+              setPeerName(active.peerNickname || t('chat.anonymous'));
+              setPeerUsername(active.peerUsername || null);
+              setPeerId(active.peerId || null);
+              setStatus('matched');
+              setScreen('chat');
+            }
             setWsStatus('connected');
             flushOutboxFnRef.current();
             break;
+          }
           case 'onlineCount':
             setOnlineCount(data.count);
             break;
@@ -1255,7 +1359,10 @@ function App() {
             const timeoutMs = Number.isFinite(timeoutMsRaw)
               ? Math.max(1000, Math.min(20000, Math.round(timeoutMsRaw)))
               : 8000;
-            const autoAcceptAt = Date.now() + timeoutMs;
+            const serverAutoAcceptAt = Number(data.autoAcceptAt);
+            const autoAcceptAt = Number.isFinite(serverAutoAcceptAt)
+              ? serverAutoAcceptAt
+              : Date.now() + timeoutMs;
             playSound();
             setChatMode('anon');
             setStatus('match_offer');
@@ -1463,6 +1570,12 @@ function App() {
           case 'friend_refresh':
             loadFriends();
             break;
+          case 'presence_update':
+            setFriendList((current) => applyPresenceUpdate(current, data));
+            setActiveFriend((current) => current?.user_id === data.userId
+              ? applyPresenceUpdate([current], data)[0]
+              : current);
+            break;
           case 'admin_notice': {
             const deliveryId = data.deliveryId || null;
             if (!shouldProcessDelivery(deliveryId)) break;
@@ -1492,6 +1605,8 @@ function App() {
     socket.onclose = () => {
       if (ws.current === socket) ws.current = null;
       wsAuthenticatedRef.current = false;
+      recoveryReadyRef.current = false;
+      recoveryConnectionRef.current.ready = false;
       setWsStatus('disconnected');
       if (!intentionalCloseRef.current) scheduleReconnect();
     };
@@ -1679,6 +1794,12 @@ function App() {
     shouldReconnectRef.current = false;
     intentionalCloseRef.current = true;
     wsAuthenticatedRef.current = false;
+    recoveryReadyRef.current = false;
+    recoveryConnectionRef.current = { ready: false, connectionId: null, serverEpoch: null, stateRevision: 0 };
+    sessionStorage.removeItem(RECOVERY_TOKEN_KEY);
+    sessionStorage.removeItem(RECOVERY_EPOCH_KEY);
+    friendHistoryRequestRef.current += 1;
+    leaveIntentRef.current = false;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
@@ -1794,7 +1915,10 @@ function App() {
   };
 
   const handleStartFriendChat = async (friend) => {
+    const historyRequestId = friendHistoryRequestRef.current + 1;
+    friendHistoryRequestRef.current = historyRequestId;
     if (IS_DEV) console.log('Selected friend:', friend);
+    activeFriendRef.current = friend;
     setActiveFriend(friend);
     setPendingMatchOffer(null);
     setRoomId(null);
@@ -1831,6 +1955,7 @@ function App() {
           sendState: 'pending',
           clientMsgId: entry.clientMsgId
         }));
+      if (friendHistoryRequestRef.current !== historyRequestId || activeFriendRef.current?.user_id !== friend.user_id) return;
       setMessages([...histMsgs, ...pendingMsgs]);
     } catch (e) {
       console.error('History error', e);
@@ -1899,6 +2024,10 @@ function App() {
   };
 
   const handleLeaveChat = useCallback(() => {
+    if (leaveIntentRef.current) return;
+    leaveIntentRef.current = true;
+    window.setTimeout(() => { leaveIntentRef.current = false; }, 1500);
+    friendHistoryRequestRef.current += 1;
     if (chatMode === 'anon') {
       const isQueueLikeState = status === 'queued' || status === 'match_offer' || status === 'match_waiting' || screen === 'matching';
       if (isQueueLikeState) {
@@ -1915,6 +2044,7 @@ function App() {
     setPeerId(null);
     setPeerUsername(null);
     setPendingMatchOffer(null);
+    activeFriendRef.current = null;
     setActiveFriend(null);
   }, [chatMode, screen, status]);
 
@@ -2099,6 +2229,16 @@ function App() {
   }, []);
 
   useEffect(() => {
+    setImageViewer((current) => {
+      if (!current.open) return current;
+      const ownerId = chatMode === 'friends' ? activeFriend?.user_id : roomId;
+      return current.ownerMode === chatMode && current.ownerId === ownerId
+        ? current
+        : { ...INITIAL_IMAGE_VIEWER };
+    });
+  }, [activeFriend?.user_id, chatMode, roomId]);
+
+  useEffect(() => {
     if (!IS_NATIVE) return () => { };
 
     let dispose = () => { };
@@ -2213,7 +2353,9 @@ function App() {
       status: 'loading',
       mediaId,
       dataUrl: null,
-      error: null
+      error: null,
+      ownerMode: chatMode,
+      ownerId: chatMode === 'friends' ? activeFriend?.user_id : roomId
     });
 
     ws.current?.send(JSON.stringify({ type: 'fetch_image', mediaId }));
@@ -2456,6 +2598,7 @@ function App() {
         onRetryViewImage={handleViewImage}
         onCloseImage={closeImageViewer}
         imageViewer={imageViewer}
+        friendPresence={friendList.find((friend) => friend.user_id === activeFriend?.user_id) || activeFriend}
       />
     );
   }

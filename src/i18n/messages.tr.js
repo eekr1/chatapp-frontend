@@ -12,6 +12,18 @@
         success: 'Basarili',
         error: 'Hata'
     },
+    presence: {
+        online: 'Cevrimici',
+        offline: 'Cevrimdisi',
+        unknown: 'Durum bilinmiyor',
+        connected: 'Bagli',
+        reconnecting: 'Yeniden baglaniliyor...',
+        reset: 'Baglanti durumu sifirlandi',
+        lastSeenNow: 'Son gorulme simdi',
+        lastSeenMinutes: 'Son gorulme {count} dk once',
+        lastSeenHours: 'Son gorulme {count} sa once',
+        lastSeenDays: 'Son gorulme {count} gun once'
+    },
     auth: {
         welcomeBack: 'Tekrar hos geldin!',
         createAccount: 'Yeni hesap olustur',

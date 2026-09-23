@@ -12,6 +12,18 @@
         success: 'Success',
         error: 'Error'
     },
+    presence: {
+        online: 'Online',
+        offline: 'Offline',
+        unknown: 'Status unavailable',
+        connected: 'Connected',
+        reconnecting: 'Reconnecting...',
+        reset: 'Connection state was reset',
+        lastSeenNow: 'Last seen just now',
+        lastSeenMinutes: 'Last seen {count} min ago',
+        lastSeenHours: 'Last seen {count} hr ago',
+        lastSeenDays: 'Last seen {count} day(s) ago'
+    },
     auth: {
         welcomeBack: 'Welcome back!',
         createAccount: 'Create a new account',

@@ -1819,3 +1819,14 @@ h4 {
   }
 }
 
+.presence-status {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.presence-status.is-online { color: var(--success); }
+.presence-status.is-offline { color: var(--text-dim); }
+.presence-status.is-unknown { color: var(--text-muted, var(--text-dim)); }
