@@ -17,6 +17,9 @@
         createAccount: 'Yeni hesap olustur',
         username: 'Kullanici adi',
         password: 'Sifre',
+        usernameHelp: 'TalkX icin olusturdugun kullanici adini kullan.',
+        passwordLoginHelp: 'TalkX sifreni gir.',
+        passwordRegisterHelp: 'En az 6 karakter kullan ve sifreni guvenli bir yerde sakla.',
         showPassword: 'Sifreyi Goster',
         hidePassword: 'Sifreyi Gizle',
         acceptLegalPrefix: '',
@@ -30,6 +33,8 @@
         processing: 'Isleniyor...',
         noAccount: 'Hesabin yok mu?',
         haveAccount: 'Zaten hesabin var mi?',
+        sessionEndedNotice: 'Oturumun sona erdi. Hesabin ve verilerin silinmedi. Yeniden giris yap.',
+        passwordChangedNotice: 'Sifren degistirildi ve tum oturumlar sonlandirildi. Yeni sifrenle giris yap.',
         genericError: 'Bir hata olustu.'
     },
     splash: {
@@ -246,6 +251,7 @@
     errors: {
         AUTH_REQUIRED: 'Oturum acmaniz gerekiyor.',
         AUTH_INVALID: 'Oturum gecersiz veya suresi dolmus.',
+        SESSION_EXPIRED: 'Oturumunun suresi doldu. Lutfen yeniden giris yap.',
         ACCOUNT_INACTIVE: 'Hesap aktif degil.',
         RATE_LIMIT: 'Cok fazla deneme. Lutfen bekleyin.',
         RATE_LIMITED: 'Cok fazla deneme. Yeniden denemeden once lutfen bekleyin.',

@@ -1,0 +1,26 @@
+:root {
+  --color-canvas: var(--bg-deep);
+  --color-surface: var(--glass-bg);
+  --color-surface-elevated: rgba(20, 20, 30, 0.88);
+  --color-text-primary: var(--text-main);
+  --color-text-secondary: var(--text-dim);
+  --color-border-subtle: var(--glass-border);
+  --color-border-active: var(--primary);
+  --color-action-primary: var(--accent-2);
+  --color-action-danger: var(--danger);
+  --color-status-success: var(--success);
+  --color-status-error: var(--danger);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --touch-target-min: 44px;
+  --motion-fast: 160ms;
+  --motion-normal: 280ms;
+  --focus-ring: 0 0 0 3px rgba(0, 240, 255, 0.35);
+}

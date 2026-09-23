@@ -13,6 +13,9 @@ import {
 } from './api';
 import { resolveLocale, toSupportedLocale, useI18n } from './i18n';
 import Auth from './components/Auth';
+import { BACK_ACTIONS, resolveBackAction } from './app/navigationPolicy';
+import { storeAuthNotice } from './auth/authPolicy';
+import { shouldIgnoreRealtimeEvent } from './state/realtimeDomains';
 
 import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
@@ -64,6 +67,13 @@ const PERMISSIONS_ONBOARDED_KEY = 'talkx_permissions_onboarded_v1';
 const BACK_EXIT_WINDOW_MS = 1900;
 const FRIEND_REQUEST_PROMPT_MS = 11000;
 const FRIEND_REQUEST_DEDUPE_TTL_MS = 15000;
+const INITIAL_IMAGE_VIEWER = Object.freeze({
+  open: false,
+  status: 'idle',
+  mediaId: null,
+  dataUrl: null,
+  error: null
+});
 const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const nowTs = () => Date.now();
 
@@ -460,14 +470,7 @@ function App() {
   const backPressAtRef = useRef(0);
 
   const IMAGE_FETCH_TIMEOUT_MS = 12000;
-  const initialImageViewer = {
-    open: false,
-    status: 'idle',
-    mediaId: null,
-    dataUrl: null,
-    error: null
-  };
-  const [imageViewer, setImageViewer] = useState(initialImageViewer);
+  const [imageViewer, setImageViewer] = useState(() => ({ ...INITIAL_IMAGE_VIEWER }));
   const imageFetchTimeoutRef = useRef(null);
 
   const activeFriendRef = useRef(activeFriend);
@@ -646,10 +649,11 @@ function App() {
 
   useEffect(() => {
     const promptTimers = friendRequestPromptTimersRef.current;
+    const seenFriendRequests = seenFriendRequestRef.current;
     return () => {
       promptTimers.forEach((timer) => clearTimeout(timer));
       promptTimers.clear();
-      seenFriendRequestRef.current.clear();
+      seenFriendRequests.clear();
     };
   }, []);
 
@@ -845,11 +849,11 @@ function App() {
       if (!requiresReaccept) loadFriends();
     } catch {
       localStorage.removeItem('session_token');
+      storeAuthNotice(sessionStorage, 'sessionEnded');
     }
   }, [applyLocaleFromUser, loadFriends, refreshLegalStatus]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     checkAuth();
   }, [checkAuth]);
 
@@ -900,7 +904,7 @@ function App() {
     if (IS_NATIVE && local) {
       await showLocalNotification({ title, body, data });
     }
-  }, [appName, showToast, t]);
+  }, [showToast]);
 
   const normalizeAdminNotice = useCallback(({ title, body, data }) => {
     const sourceTitle = appName;
@@ -985,7 +989,7 @@ function App() {
       pushRetryAttemptRef.current += 1;
     }
     return false;
-  }, [clearPushRetry, showToast, user]);
+  }, [appName, clearPushRetry, showToast, user]);
 
   const handlePushPayload = useCallback(async (payload = {}, fromPushEvent = false) => {
     const data = payload.data || {};
@@ -1066,7 +1070,7 @@ function App() {
         data: { ...data, deliveryId, channelId }
       });
     }
-  }, [enqueueFriendRequestPrompt, loadFriends, normalizeAdminNotice, notifyIncoming, setScreen, shouldProcessDelivery, showToast, t]);
+  }, [appName, enqueueFriendRequestPrompt, loadFriends, normalizeAdminNotice, notifyIncoming, setScreen, shouldProcessDelivery, showToast, t]);
 
   const playSound = useCallback(() => {
     try {
@@ -1145,7 +1149,7 @@ function App() {
     }, OUTBOX_ACK_TIMEOUT_MS);
     ackTimersRef.current.set(item.clientMsgId, timer);
     return true;
-  }, [applyOutbox, clearAckTimer, dropOutboxItem, isWsReady, setMessageSendState, showToast]);
+  }, [appName, applyOutbox, clearAckTimer, dropOutboxItem, isWsReady, setMessageSendState, showToast, t]);
 
   const flushOutbox = useCallback(() => {
     if (!isWsReady()) return;
@@ -1225,6 +1229,10 @@ function App() {
       try {
         const data = JSON.parse(event.data);
         if (IS_DEV) console.log('[WS]', data.type, data);
+        if (shouldIgnoreRealtimeEvent(data.type, {
+          chatMode: chatModeRef.current,
+          screen: screenRef.current
+        })) return;
 
         switch (data.type) {
           case 'welcome':
@@ -1330,6 +1338,7 @@ function App() {
               setWsStatus('auth_error');
               shouldReconnectRef.current = false;
               localStorage.removeItem('session_token');
+              storeAuthNotice(sessionStorage, 'sessionEnded');
               setUser(null);
               setScreen('splash');
             } else {
@@ -1640,7 +1649,7 @@ function App() {
     if (!mediaGranted) {
       showToast(appName, t('app.pushPermissionCameraOff'), 6200);
     }
-  }, [showToast]);
+  }, [appName, showToast, t]);
 
   const handleEnablePermissions = useCallback(async () => {
     if (permissionsRequesting) return;
@@ -1662,7 +1671,11 @@ function App() {
     showToast(appName, t('app.pushPermissionLater'), 5800);
   }, [appName, completePermissionOnboarding, permissionsRequesting, showToast, t]);
 
-  const handleLogout = async () => {
+  const handleLogout = async (options = {}) => {
+    const notice = options && typeof options === 'object' && typeof options.notice === 'string'
+      ? options.notice
+      : null;
+    if (notice) storeAuthNotice(sessionStorage, notice);
     shouldReconnectRef.current = false;
     intentionalCloseRef.current = true;
     wsAuthenticatedRef.current = false;
@@ -1726,7 +1739,7 @@ function App() {
       clearTimeout(imageFetchTimeoutRef.current);
       imageFetchTimeoutRef.current = null;
     }
-    setImageViewer(initialImageViewer);
+    setImageViewer({ ...INITIAL_IMAGE_VIEWER });
   };
 
   const handleAccountDeletionRequested = async (message) => {
@@ -1885,7 +1898,7 @@ function App() {
     }
   };
 
-  const handleLeaveChat = () => {
+  const handleLeaveChat = useCallback(() => {
     if (chatMode === 'anon') {
       const isQueueLikeState = status === 'queued' || status === 'match_offer' || status === 'match_waiting' || screen === 'matching';
       if (isQueueLikeState) {
@@ -1903,7 +1916,7 @@ function App() {
     setPeerUsername(null);
     setPendingMatchOffer(null);
     setActiveFriend(null);
-  };
+  }, [chatMode, screen, status]);
 
   const handleSendMessage = (text) => {
     if (chatMode === 'anon' && roomId) {
@@ -2077,13 +2090,13 @@ function App() {
     }
   }, [activeLocale, setLocale, user?.id]);
 
-  const closeImageViewer = () => {
+  const closeImageViewer = useCallback(() => {
     if (imageFetchTimeoutRef.current) {
       clearTimeout(imageFetchTimeoutRef.current);
       imageFetchTimeoutRef.current = null;
     }
-    setImageViewer(initialImageViewer);
-  };
+    setImageViewer({ ...INITIAL_IMAGE_VIEWER });
+  }, []);
 
   useEffect(() => {
     if (!IS_NATIVE) return () => { };
@@ -2101,42 +2114,33 @@ function App() {
 
     (async () => {
       dispose = await addNativeBackButtonListener(() => {
-        if (showPermissionOnboarding) {
-          handleSkipPermissions();
-          return;
-        }
+        const action = resolveBackAction({
+          authenticated: Boolean(user),
+          imageViewerOpen: Boolean(imageViewer?.open),
+          legalOpen: Boolean(legalKind),
+          permissionOpen: showPermissionOnboarding,
+          screen: screenRef.current
+        });
 
-        if (legalKind) {
-          window.location.href = '/';
-          return;
+        switch (action) {
+          case BACK_ACTIONS.CLOSE_PERMISSION:
+            handleSkipPermissions();
+            break;
+          case BACK_ACTIONS.NAVIGATE_ROOT:
+            window.location.href = '/';
+            break;
+          case BACK_ACTIONS.CLOSE_IMAGE:
+            closeImageViewer();
+            break;
+          case BACK_ACTIONS.LEAVE_TRANSIENT:
+            handleLeaveChat();
+            break;
+          case BACK_ACTIONS.NAVIGATE_HOME:
+            setScreen('home');
+            break;
+          default:
+            exitWithDoubleBack();
         }
-
-        if (!user) {
-          exitWithDoubleBack();
-          return;
-        }
-
-        if (imageViewer?.open) {
-          closeImageViewer();
-          return;
-        }
-
-        if (screenRef.current === 'chat' || screenRef.current === 'matching') {
-          handleLeaveChat();
-          return;
-        }
-
-        if (screenRef.current === 'friends') {
-          setScreen('home');
-          return;
-        }
-
-        if (screenRef.current === 'home' || screenRef.current === 'splash') {
-          exitWithDoubleBack();
-          return;
-        }
-
-        setScreen('home');
       });
     })();
 
@@ -2224,24 +2228,24 @@ function App() {
   };
 
   const toastStack = useMemo(() => (
-    <div className="admin-toast-stack">
+    <div className="client-toast-stack">
       {notices.map((notice) => (
         <div
           key={notice.id}
-          className={`admin-toast${notice.closing ? ' is-closing' : ''}`}
+          className={`client-toast${notice.closing ? ' is-closing' : ''}`}
           role="status"
           aria-live="polite"
           style={{ '--toast-duration': `${notice.durationMs || TOAST_DEFAULT_MS}ms` }}
         >
-          <button className="admin-toast-close" onClick={() => dismissToast(notice.id)} aria-label={t('common.close')}>x</button>
-          <div className="admin-toast-header">
-            <span className="admin-toast-tag">{t('app.notificationTag')}</span>
+          <button className="client-toast-close" onClick={() => dismissToast(notice.id)} aria-label={t('common.close')}>x</button>
+          <div className="client-toast-header">
+            <span className="client-toast-tag">{t('app.notificationTag')}</span>
           </div>
-          <div className="admin-toast-title">{notice.title}</div>
-          <div className="admin-toast-divider" />
-          <div className="admin-toast-body">{notice.body}</div>
-          <div className="admin-toast-progress" aria-hidden="true">
-            <span className="admin-toast-progress-bar" />
+          <div className="client-toast-title">{notice.title}</div>
+          <div className="client-toast-divider" />
+          <div className="client-toast-body">{notice.body}</div>
+          <div className="client-toast-progress" aria-hidden="true">
+            <span className="client-toast-progress-bar" />
           </div>
         </div>
       ))}

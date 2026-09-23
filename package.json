@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --test test/*.test.js",
     "preview": "vite preview",
     "mobile:sync:android": "npx cap sync android",
     "mobile:bump:android": "powershell -ExecutionPolicy Bypass -File ./scripts/bump-android-version.ps1",

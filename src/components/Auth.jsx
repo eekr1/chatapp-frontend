@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
-import { auth } from '../api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { auth, getLocalizedApiError } from '../api';
+import { consumeAuthNotice, resolveAuthNoticeKey } from '../auth/authPolicy';
 import { useI18n } from '../i18n';
+import ClientStateMessage from './ClientStateMessage';
 
 const DEFAULT_LEGAL_FOOTER = Object.freeze({
     privacyLabel: 'Gizlilik Politikasi',
@@ -25,6 +27,9 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
     const [acceptLegal, setAcceptLegal] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [notice, setNotice] = useState(null);
+    const usernameRef = useRef(null);
+    const errorRef = useRef(null);
 
     const footer = useMemo(
         () => ({ ...DEFAULT_LEGAL_FOOTER, ...(legalFooter || {}) }),
@@ -34,19 +39,27 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
         () => ({ ...DEFAULT_LEGAL_VERSIONS, ...(legalVersions || {}) }),
         [legalVersions]
     );
+    const noticeKey = resolveAuthNoticeKey(notice);
 
-    const submitDisabled = loading;
+    useEffect(() => {
+        setNotice(consumeAuthNotice(sessionStorage));
+    }, []);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    useEffect(() => {
+        if (error) errorRef.current?.focus();
+    }, [error]);
+
+    const handleSubmit = async (event) => {
+        event.preventDefault();
         setError('');
+        setNotice(null);
         setLoading(true);
 
         try {
             if (isLogin) {
-                const res = await auth.login(username, password, localStorage.getItem('anon_device_id') || 'unknown');
-                localStorage.setItem('session_token', res.data.token);
-                onLogin(res.data.user);
+                const response = await auth.login(username, password, localStorage.getItem('anon_device_id') || 'unknown');
+                localStorage.setItem('session_token', response.data.token);
+                onLogin(response.data.user);
                 return;
             }
 
@@ -61,44 +74,88 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                 privacy_version: versions.privacy
             }, locale);
 
-            const res = await auth.login(username, password, localStorage.getItem('anon_device_id') || 'unknown');
-            localStorage.setItem('session_token', res.data.token);
-            onLogin(res.data.user);
-        } catch (err) {
-            setError(err.response?.data?.error || t('auth.genericError'));
+            const response = await auth.login(username, password, localStorage.getItem('anon_device_id') || 'unknown');
+            localStorage.setItem('session_token', response.data.token);
+            onLogin(response.data.user);
+        } catch (submitError) {
+            setError(getLocalizedApiError(t, submitError, 'auth.genericError'));
         } finally {
             setLoading(false);
         }
     };
 
+    const switchMode = () => {
+        setIsLogin((current) => !current);
+        setError('');
+        setNotice(null);
+        setPassword('');
+        setShowPassword(false);
+        setAcceptLegal(false);
+        requestAnimationFrame(() => usernameRef.current?.focus());
+    };
+
+    const usernameDescription = error ? 'auth-username-help auth-form-error' : 'auth-username-help';
+    const passwordDescription = error ? 'auth-password-help auth-form-error' : 'auth-password-help';
+
     return (
-        <div className="login-container center-flex" style={{ minHeight: '100vh' }}>
-            <div className="glass-card" style={{ padding: 40, width: '100%', maxWidth: 400, textAlign: 'center' }}>
-                <div className="brand-lockup" style={{ justifyContent: 'center', marginBottom: 6 }}>
-                    <img src="/brand/talkx-icon-256.png" alt="TalkX icon" className="brand-lockup-icon" />
-                    <h1 className="brand-lockup-text" style={{ margin: 0 }}>TalkX</h1>
+        <main className="login-container center-flex auth-page">
+            <section className="glass-card auth-card" aria-labelledby="auth-title">
+                <div className="brand-lockup auth-brand-lockup">
+                    <img src="/brand/talkx-icon-256.png" alt="" className="brand-lockup-icon" />
+                    <h1 id="auth-title" className="brand-lockup-text">TalkX</h1>
                 </div>
                 <p className="subtitle">{isLogin ? t('auth.welcomeBack') : t('auth.createAccount')}</p>
 
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 20 }}>
-                    <input
-                        className="input-glass"
-                        placeholder={t('auth.username')}
-                        value={username}
-                        onChange={(event) => setUsername(event.target.value)}
-                        autoFocus
-                    />
-                    <input
-                        className="input-glass"
-                        type={showPassword ? 'text' : 'password'}
-                        placeholder={t('auth.password')}
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                    />
+                {noticeKey && (
+                    <ClientStateMessage state="stale">
+                        {t(noticeKey)}
+                    </ClientStateMessage>
+                )}
+
+                <form onSubmit={handleSubmit} className="auth-form" aria-busy={loading}>
+                    <div className="auth-field">
+                        <label htmlFor="auth-username">{t('auth.username')}</label>
+                        <input
+                            ref={usernameRef}
+                            id="auth-username"
+                            name="username"
+                            className="input-glass"
+                            value={username}
+                            onChange={(event) => setUsername(event.target.value)}
+                            autoComplete="username"
+                            aria-describedby={usernameDescription}
+                            aria-invalid={Boolean(error)}
+                            required
+                            autoFocus
+                        />
+                        <span id="auth-username-help" className="auth-help">{t('auth.usernameHelp')}</span>
+                    </div>
+
+                    <div className="auth-field">
+                        <label htmlFor="auth-password">{t('auth.password')}</label>
+                        <input
+                            id="auth-password"
+                            name="password"
+                            className="input-glass"
+                            type={showPassword ? 'text' : 'password'}
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            autoComplete={isLogin ? 'current-password' : 'new-password'}
+                            aria-describedby={passwordDescription}
+                            aria-invalid={Boolean(error)}
+                            required
+                        />
+                        <span id="auth-password-help" className="auth-help">
+                            {t(isLogin ? 'auth.passwordLoginHelp' : 'auth.passwordRegisterHelp')}
+                        </span>
+                    </div>
+
                     <button
                         type="button"
                         className="auth-password-toggle"
-                        onClick={() => setShowPassword((prev) => !prev)}
+                        onClick={() => setShowPassword((current) => !current)}
+                        aria-controls="auth-password"
+                        aria-pressed={showPassword}
                     >
                         {showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                     </button>
@@ -115,7 +172,6 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                                 }}
                             />
                             <span>
-                                {' '}
                                 <a
                                     href={footer.privacyUrl}
                                     {...(isExternalUrl(footer.privacyUrl) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
@@ -134,35 +190,31 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                         </label>
                     )}
 
-                    {error && <div className="error-text">{error}</div>}
+                    {error && (
+                        <ClientStateMessage state="partial_error" id="auth-form-error" focusable>
+                            <span ref={errorRef} tabIndex={-1}>{error}</span>
+                        </ClientStateMessage>
+                    )}
 
                     {!isLogin && (
-                        <div style={{ backgroundColor: 'rgba(231, 76, 60, 0.1)', border: '1px solid var(--danger)', borderRadius: '8px', padding: '10px', marginTop: '10px', marginBottom: '10px', fontSize: '0.85em', color: 'var(--danger)', textAlign: 'left' }}>
-                            <strong>{t('auth.importantWarning')}</strong><br />
-                            {t('auth.noEmailRecovery')}
+                        <div className="auth-warning" role="note">
+                            <strong>{t('auth.importantWarning')}</strong>
+                            <span>{t('auth.noEmailRecovery')}</span>
                         </div>
                     )}
 
-                    <button type="submit" disabled={submitDisabled} className="btn-solid-purple" style={{ marginTop: 10, width: '100%' }}>
+                    <button type="submit" disabled={loading} className="btn-solid-purple auth-submit">
                         {loading ? t('auth.processing') : (isLogin ? t('auth.submitLogin') : t('auth.submitRegister'))}
                     </button>
 
-                    <p style={{ marginTop: '15px', fontSize: '0.9em', color: '#666' }}>
+                    <p className="auth-mode-prompt">
                         {isLogin ? `${t('auth.noAccount')} ` : `${t('auth.haveAccount')} `}
-                        <span
-                            style={{ color: 'var(--primary)', cursor: 'pointer', fontWeight: 'bold' }}
-                            onClick={() => {
-                                setIsLogin(!isLogin);
-                                setError('');
-                                setShowPassword(false);
-                                setAcceptLegal(false);
-                            }}
-                        >
+                        <button type="button" className="auth-mode-switch" onClick={switchMode}>
                             {isLogin ? t('auth.submitRegister') : t('auth.submitLogin')}
-                        </span>
+                        </button>
                     </p>
                 </form>
-            </div>
-        </div>
+            </section>
+        </main>
     );
 }

@@ -17,6 +17,9 @@
         createAccount: 'Create a new account',
         username: 'Username',
         password: 'Password',
+        usernameHelp: 'Use the username you created for TalkX.',
+        passwordLoginHelp: 'Enter your TalkX password.',
+        passwordRegisterHelp: 'Use at least 6 characters and keep it somewhere safe.',
         showPassword: 'Show Password',
         hidePassword: 'Hide Password',
         acceptLegalPrefix: '',
@@ -30,6 +33,8 @@
         processing: 'Processing...',
         noAccount: "Don't have an account?",
         haveAccount: 'Already have an account?',
+        sessionEndedNotice: 'Your session ended. Your account and data were not deleted. Sign in again.',
+        passwordChangedNotice: 'Your password was changed and all sessions ended. Sign in with your new password.',
         genericError: 'Something went wrong.'
     },
     splash: {
@@ -246,6 +251,7 @@
     errors: {
         AUTH_REQUIRED: 'You need to sign in.',
         AUTH_INVALID: 'Session is invalid or expired.',
+        SESSION_EXPIRED: 'Your session expired. Please sign in again.',
         ACCOUNT_INACTIVE: 'Account is not active.',
         RATE_LIMIT: 'Too many attempts. Please wait.',
         RATE_LIMITED: 'Too many attempts. Please wait before trying again.',
