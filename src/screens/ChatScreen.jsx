@@ -21,6 +21,22 @@ const CameraIcon = () => (
     </svg>
 );
 
+const ReportIcon = () => (
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M5 3v18M5 4h11l-1 4 3 4H5" />
+    </svg>
+);
+const BlockIcon = () => (
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="9" /><path d="m6 6 12 12" />
+    </svg>
+);
+const LeaveIcon = () => (
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M10 17l5-5-5-5M15 12H3M14 3h6v18h-6" />
+    </svg>
+);
+
 const COOL_NAMES = ['ShadowFox', 'NeonWraith', 'VoidRaven', 'EclipseOwl', 'CyberWolf', 'GhostDrifter'];
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECT_TEXT_CODE_POINTS = 2000;
@@ -296,15 +312,15 @@ const ChatScreen = ({
                         </button>
                     )}
                     <button ref={reportButtonRef} type="button" onClick={() => setReportOpen(true)} title={t('chat.report')} aria-label={t('chat.report')} className="chat-report-btn">
-                        {t('chat.report')}
+                        <ReportIcon /><span>{t('chat.report')}</span>
                     </button>
                     {onBlock && (
                         <button type="button" onClick={onBlock} title={t('chat.block')} className="chat-block-btn">
-                            {t('chat.block')}
+                            <BlockIcon /><span>{t('chat.block')}</span>
                         </button>
                     )}
-                    <button onClick={onLeave} className="chat-leave-btn">
-                        {t('chat.leave')}
+                    <button onClick={onLeave} title={t('chat.leave')} className="chat-leave-btn">
+                        <LeaveIcon /><span>{t('chat.leave')}</span>
                     </button>
                 </div>
             </div>
@@ -323,18 +339,18 @@ const ChatScreen = ({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
                             {m.msgType === 'image' ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    {m.mediaExpired || ['consumed', 'expired', 'unavailable'].includes(m.mediaStatus) ? (
+                                    {m.mediaExpired || ['consumed', 'expired', 'unavailable', 'quarantined'].includes(m.mediaStatus) ? (
                                         <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>
                                             {m.mediaStatus === 'expired'
                                                 ? t('chat.photoExpired')
-                                                : (m.mediaStatus === 'unavailable' ? t('chat.photoUnavailable') : t('chat.photoOpened'))}
+                                                : (['unavailable', 'quarantined'].includes(m.mediaStatus) ? t('chat.photoUnavailable') : t('chat.photoOpened'))}
                                         </span>
                                     ) : (
                                         m.from === 'me' ? (
                                             <span style={{ fontStyle: 'italic', fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)' }}>{t('chat.photoSent')}</span>
                                         ) : (
-                                            <button className="btn-neon-sm" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={() => onViewImage && onViewImage(m.mediaId)}>
-                                                {t('chat.viewPhoto')}
+                                            <button disabled={imageViewer?.status === 'loading' && imageViewer?.mediaId === m.mediaId} className="btn-neon-sm" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={() => onViewImage && onViewImage(m.mediaId)}>
+                                                {imageViewer?.status === 'loading' && imageViewer?.mediaId === m.mediaId ? t('chat.photoLoading') : t('chat.viewPhoto')}
                                             </button>
                                         )
                                     )}

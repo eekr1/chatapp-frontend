@@ -908,6 +908,34 @@ h4 {
   cursor: pointer;
 }
 
+.chat-report-btn,
+.chat-block-btn,
+.chat-leave-btn {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+@media (max-width: 380px) {
+  .chat-header-actions {
+    gap: 4px;
+  }
+
+  .chat-report-btn span,
+  .chat-block-btn span,
+  .chat-leave-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
 .wave11-dialog-backdrop {
   position: fixed;
   inset: 0;

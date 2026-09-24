@@ -1241,7 +1241,10 @@ function App() {
       const current = outboxRef.current.find((entry) => entry.clientMsgId === item.clientMsgId);
       if (!current) return;
       if ((Number(current.attempts) || 0) >= OUTBOX_MAX_ATTEMPTS) {
-        setMessageSendState(item.clientMsgId, { sendState: 'pending_unknown', errorCode: 'ACK_TIMEOUT' });
+        setMessageSendState(item.clientMsgId, {
+          sendState: 'pending_unknown',
+          errorCode: current.kind === 'direct_image_send' ? 'MEDIA_RESULT_UNKNOWN' : 'ACK_TIMEOUT'
+        });
         showToast(appName, t('app.connectionMissingMessage'), 6000);
         return;
       }
@@ -1647,6 +1650,8 @@ function App() {
                 msgType: data.msgType,
                 mediaId: data.mediaId,
                 mediaStatus: data.mediaStatus || (data.msgType === 'image' ? 'available' : undefined),
+                mediaRevision: data.revision || null,
+                mediaExpiresAt: data.expiresAt || null,
                 clientMsgId: data.clientMsgId || null,
                 serverMessageId: data.serverMessageId || null,
                 conversationId: data.conversationId || null,
@@ -1680,14 +1685,19 @@ function App() {
           }
           case 'image_sent':
             if (data.clientMsgId) {
-              setMessageSendState(data.clientMsgId, { sendState: 'sent', mediaId: data.mediaId, mediaStatus: data.mediaStatus || 'available' });
+              setMessageSendState(data.clientMsgId, {
+                sendState: 'sent', mediaId: data.mediaId, mediaStatus: data.mediaStatus || 'available',
+                mediaRevision: data.revision || null, mediaExpiresAt: data.expiresAt || null
+              });
             } else {
               setMessages(prev => [...prev, {
                 from: 'me',
                 text: t('chat.photoLabel'),
                 msgType: 'image',
                 mediaId: data.mediaId,
-                mediaStatus: data.mediaStatus || 'available'
+                mediaStatus: data.mediaStatus || 'available',
+                mediaRevision: data.revision || null,
+                mediaExpiresAt: data.expiresAt || null
               }]);
             }
             break;
@@ -1717,7 +1727,7 @@ function App() {
               if (!prev.open || prev.mediaId !== data.mediaId) return prev;
               return { ...prev, status: 'ready', dataUrl: data.imageData, error: null };
             });
-            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaStatus: data.mediaStatus || 'consumed' } : m));
+            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaStatus: data.mediaStatus || 'consumed', mediaRevision: data.revision || m.mediaRevision } : m));
             break;
           case 'image_error':
             if (imageFetchTimeoutRef.current) {
@@ -1728,7 +1738,7 @@ function App() {
               if (!prev.open || prev.mediaId !== data.mediaId) return prev;
               return { ...prev, status: 'error', error: data.message || t('chat.photoOpenFailed') };
             });
-            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaStatus: data.mediaStatus || 'unavailable' } : m));
+            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaStatus: data.mediaStatus || 'unavailable', mediaRevision: data.revision || m.mediaRevision } : m));
             break;
           case 'friend_request_incoming': {
             const requestUserId = String(data.request_user_id || data.requestUserId || '').trim();
@@ -2223,6 +2233,8 @@ function App() {
         mediaId: m.mediaId,
         mediaExpired: m.mediaExpired,
         mediaStatus: m.mediaStatus || (m.mediaExpired ? 'consumed' : (m.msgType === 'image' ? 'available' : undefined)),
+        mediaRevision: m.mediaRevision || null,
+        mediaExpiresAt: m.mediaExpiresAt || null,
         createdAt: m.createdAt,
         sendState: m.from === 'me' ? 'sent' : undefined
       }));

@@ -44,4 +44,5 @@ test('Wave 11 replaces prompt reporting with structured report commands', () => 
   assert.doesNotMatch(source, /window\.prompt\(t\('app\.reportPrompt'\)\)/);
   assert.match(source, /commandId: randomId\(\)/);
   assert.match(source, /reasonCategory/);
+  assert.match(source, /current\.kind === 'direct_image_send' \? 'MEDIA_RESULT_UNKNOWN' : 'ACK_TIMEOUT'/);
 });
