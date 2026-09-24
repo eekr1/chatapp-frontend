@@ -17,6 +17,13 @@ import { BACK_ACTIONS, resolveBackAction } from './app/navigationPolicy';
 import { storeAuthNotice } from './auth/authPolicy';
 import { shouldIgnoreRealtimeEvent } from './state/realtimeDomains';
 import {
+  INITIAL_SEARCH_STATE,
+  applySearchEvent,
+  createSearchIntent,
+  shouldAcceptSearchEvent
+} from './state/searchLifecycle';
+import { chooseNextPrompt, getPrompt } from './match/promptCatalog';
+import {
   applyPresenceUpdate,
   parseRecoverySnapshot,
   reconcileUnread,
@@ -433,6 +440,7 @@ function App() {
   const [peerUsername, setPeerUsername] = useState(null);
   const [peerId, setPeerId] = useState(null);
   const [pendingMatchOffer, setPendingMatchOffer] = useState(null);
+  const [searchState, setSearchState] = useState(INITIAL_SEARCH_STATE);
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [roomId, setRoomId] = useState(null);
   const [chatMode, setChatMode] = useState('anon');
@@ -468,6 +476,9 @@ function App() {
   const friendRequestPromptTimersRef = useRef(new Map());
   const seenFriendRequestRef = useRef(new Map());
   const noticesRef = useRef(notices);
+  const searchStateRef = useRef(searchState);
+  const restartSearchAfterCancelRef = useRef(false);
+  const startAnonFnRef = useRef(() => { });
   const pushTokenRef = useRef(null);
   const nativePushTokenRef = useRef(null);
   const pushRetryTimerRef = useRef(null);
@@ -500,6 +511,23 @@ function App() {
   useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
   useEffect(() => { screenRef.current = screen; }, [screen]);
   useEffect(() => { noticesRef.current = notices; }, [notices]);
+  useEffect(() => { searchStateRef.current = searchState; }, [searchState]);
+
+  const updateSearchState = useCallback((event) => {
+    setSearchState((previous) => {
+      const next = applySearchEvent(previous, event);
+      searchStateRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const setLocalSearchPhase = useCallback((phase) => {
+    const current = searchStateRef.current;
+    if (!current.searchId || !['preparing', 'queued', 'extended', 'reconnecting', 'offline'].includes(current.phase)) return;
+    const next = { ...current, phase };
+    searchStateRef.current = next;
+    setSearchState(next);
+  }, []);
 
   useEffect(() => {
     let canceled = false;
@@ -1195,18 +1223,20 @@ function App() {
     if (!shouldReconnectRef.current || intentionalCloseRef.current || !user) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setWsStatus('offline');
+      setLocalSearchPhase('offline');
       return;
     }
     if (reconnectTimerRef.current) return;
     const idx = Math.min(reconnectAttemptRef.current, WS_RETRY_STEPS_MS.length - 1);
     const delay = withJitter(Math.min(WS_RETRY_STEPS_MS[idx], WS_RETRY_MAX_MS));
     setWsStatus('reconnecting');
+    setLocalSearchPhase('reconnecting');
     reconnectTimerRef.current = window.setTimeout(() => {
       reconnectTimerRef.current = null;
       reconnectAttemptRef.current += 1;
       connectWsFnRef.current();
     }, delay);
-  }, [user]);
+  }, [setLocalSearchPhase, user]);
 
   const connect = useCallback(() => {
     if (!user) return;
@@ -1240,7 +1270,7 @@ function App() {
         platform: IS_NATIVE ? 'android' : 'web',
         lang: activeLocale,
         appVersion: APP_VERSION,
-        capabilities: ['error-envelope-v1', 'session-revoke-v1', 'recovery-v1', 'presence-v1'],
+        capabilities: ['error-envelope-v1', 'session-revoke-v1', 'recovery-v1', 'presence-v1', 'matchSearchLifecycleV1'],
         recoveryToken: sessionStorage.getItem(RECOVERY_TOKEN_KEY) || undefined,
         serverEpoch: sessionStorage.getItem(RECOVERY_EPOCH_KEY) || undefined
       }));
@@ -1280,6 +1310,7 @@ function App() {
               recoveryConnectionRef.current = { ready: false, connectionId: null, serverEpoch: null, stateRevision: 0 };
               setPendingMatchOffer(null);
               setRoomId(null);
+              updateSearchState({ type: 'search_reset' });
               if (chatModeRef.current === 'anon') {
                 setMessages([]);
                 setStatus('disconnected');
@@ -1302,6 +1333,7 @@ function App() {
             if (snapshot.result !== 'resumed' || active.kind === 'idle') {
               setPendingMatchOffer(null);
               setRoomId(null);
+              updateSearchState({ type: 'search_reset' });
               if (chatModeRef.current === 'anon' && ['matching', 'chat'].includes(screenRef.current)) {
                 setMessages([]);
                 setPeerName(null);
@@ -1313,12 +1345,14 @@ function App() {
             } else if (active.kind === 'queue') {
               setPendingMatchOffer(null);
               setRoomId(null);
+              updateSearchState({ ...active, type: 'recovery_search' });
               setStatus('queued');
               setChatMode('anon');
               setScreen('matching');
             } else if (active.kind === 'offer') {
               setRoomId(null);
               setChatMode('anon');
+              updateSearchState({ ...active, type: 'recovery_search', phase: 'offer' });
               setStatus(active.decision === 'accepted' ? 'match_waiting' : 'match_offer');
               setPendingMatchOffer({
                 matchId: active.matchId,
@@ -1349,11 +1383,38 @@ function App() {
             setOnlineCount(data.count);
             break;
           case 'queued':
+            if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
+            updateSearchState(data);
             setPendingMatchOffer(null);
             setStatus('queued');
             setScreen('matching');
             break;
+          case 'search_phase':
+            updateSearchState(data);
+            break;
+          case 'search_error':
+            if (data.commandId !== searchStateRef.current.commandId) break;
+            updateSearchState({ type: 'search_reset' });
+            setPendingMatchOffer(null);
+            setStatus('idle');
+            setScreen('home');
+            showToast(appName, t('match.searchConflict'), 5000);
+            break;
+          case 'queue_left':
+            if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
+            updateSearchState(data);
+            setPendingMatchOffer(null);
+            setStatus('idle');
+            if (restartSearchAfterCancelRef.current) {
+              restartSearchAfterCancelRef.current = false;
+              window.setTimeout(() => startAnonFnRef.current(), 0);
+            } else {
+              setScreen('home');
+            }
+            break;
           case 'match_offer': {
+            if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
+            updateSearchState(data);
             const fallbackName = t('chat.anonymous');
             const timeoutMsRaw = Number(data.timeoutMs);
             const timeoutMs = Number.isFinite(timeoutMsRaw)
@@ -1385,15 +1446,18 @@ function App() {
             break;
           }
           case 'match_offer_peer_accepted':
+            if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
             setPendingMatchOffer((prev) => (prev ? { ...prev, peerAccepted: true } : prev));
             break;
           case 'match_offer_waiting':
+            if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
             setStatus('match_waiting');
             setPendingMatchOffer((prev) => (prev ? { ...prev, accepted: true } : prev));
             break;
           case 'match_offer_closed':
+            if (data.searchId && !shouldAcceptSearchEvent(searchStateRef.current, data)) break;
             setPendingMatchOffer(null);
-            setStatus('queued');
+            setStatus('preparing');
             if (data.reason === 'peer_rejected') {
               showToast(appName, t('app.matchPeerRejected'), 3200);
             } else if (data.reason === 'peer_cancelled' || data.reason === 'peer_disconnected') {
@@ -1405,6 +1469,7 @@ function App() {
             if (IS_DEV) console.log('[SERVER DEBUG]', data.msg, data);
             break;
           case 'matched':
+            if (data.searchId && !shouldAcceptSearchEvent(searchStateRef.current, data)) break;
             setPendingMatchOffer(null);
             setStatus('matched');
             setRoomId(data.roomId);
@@ -1610,7 +1675,7 @@ function App() {
       setWsStatus('disconnected');
       if (!intentionalCloseRef.current) scheduleReconnect();
     };
-  }, [activeLocale, appName, dropOutboxItem, enqueueFriendRequestPrompt, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, t, user]);
+  }, [activeLocale, appName, dropOutboxItem, enqueueFriendRequestPrompt, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, t, updateSearchState, user]);
 
   useEffect(() => {
     connectWsFnRef.current = connect;
@@ -1845,6 +1910,7 @@ function App() {
     setPeerUsername(null);
     setPeerId(null);
     setPendingMatchOffer(null);
+    updateSearchState({ type: 'search_reset' });
     setIsPeerTyping(false);
     setRoomId(null);
     setChatMode('anon');
@@ -1879,8 +1945,41 @@ function App() {
     setPendingMatchOffer(null);
     setRoomId(null);
     setMessages([]);
-    ws.current?.send(JSON.stringify({ type: 'joinQueue' }));
+    const intent = createSearchIntent({
+      searchId: randomId(),
+      commandId: randomId(),
+      moodId: 'random',
+      promptId: chooseNextPrompt({ category: 'random', recentIds: searchStateRef.current.recentPromptIds }),
+      recentPromptIds: searchStateRef.current.recentPromptIds
+    });
+    searchStateRef.current = intent;
+    setSearchState(intent);
+    setStatus('preparing');
+    ws.current?.send(JSON.stringify({
+      type: 'joinQueue',
+      protocolVersion: intent.protocolVersion,
+      searchId: intent.searchId,
+      commandId: intent.commandId
+    }));
     setScreen('matching');
+  };
+  startAnonFnRef.current = handleStartAnon;
+
+  const handleMoodChange = (moodId) => {
+    const promptId = chooseNextPrompt({ category: moodId });
+    const recentPromptIds = [...searchStateRef.current.recentPromptIds, searchStateRef.current.promptId].filter(Boolean).slice(-4);
+    const next = { ...searchStateRef.current, moodId, promptId, recentPromptIds };
+    searchStateRef.current = next;
+    setSearchState(next);
+  };
+
+  const handleNextPrompt = () => {
+    const current = searchStateRef.current;
+    const recentPromptIds = [...current.recentPromptIds, current.promptId].filter(Boolean).slice(-4);
+    const promptId = chooseNextPrompt({ category: current.moodId, currentId: current.promptId, recentIds: recentPromptIds });
+    const next = { ...current, promptId, recentPromptIds };
+    searchStateRef.current = next;
+    setSearchState(next);
   };
 
   const handleMatchAccept = () => {
@@ -1906,7 +2005,10 @@ function App() {
       return;
     }
     setPendingMatchOffer(null);
-    setStatus('queued');
+    setStatus('preparing');
+    const preparing = { ...searchStateRef.current, phase: 'preparing' };
+    searchStateRef.current = preparing;
+    setSearchState(preparing);
     ws.current?.send(JSON.stringify({
       type: 'matchDecision',
       matchId: pendingMatchOffer.matchId || undefined,
@@ -2031,6 +2133,19 @@ function App() {
     if (chatMode === 'anon') {
       const isQueueLikeState = status === 'queued' || status === 'match_offer' || status === 'match_waiting' || screen === 'matching';
       if (isQueueLikeState) {
+        const activeSearch = searchStateRef.current;
+        if (activeSearch.searchId) {
+          const commandId = randomId();
+          updateSearchState({ type: 'search_cancel_pending' });
+          ws.current?.send(JSON.stringify({
+            type: 'leaveQueue',
+            protocolVersion: activeSearch.protocolVersion,
+            searchId: activeSearch.searchId,
+            commandId,
+            reason: 'user_cancelled'
+          }));
+          return;
+        }
         ws.current?.send(JSON.stringify({ type: 'leaveQueue' }));
       } else {
         ws.current?.send(JSON.stringify({ type: 'leave' }));
@@ -2046,7 +2161,17 @@ function App() {
     setPendingMatchOffer(null);
     activeFriendRef.current = null;
     setActiveFriend(null);
-  }, [chatMode, screen, status]);
+  }, [chatMode, screen, status, updateSearchState]);
+
+  const handleSearchRetry = () => {
+    if (!isWsReady()) {
+      showToast(appName, t('app.reconnecting'), 4500);
+      connectWsFnRef.current();
+      return;
+    }
+    restartSearchAfterCancelRef.current = true;
+    handleLeaveChat();
+  };
 
   const handleSendMessage = (text) => {
     if (chatMode === 'anon' && roomId) {
@@ -2570,9 +2695,13 @@ function App() {
       <MatchScreen
         status={status}
         offer={pendingMatchOffer}
+        search={searchState}
         onAccept={handleMatchAccept}
         onReject={handleMatchReject}
         onCancel={handleLeaveChat}
+        onMoodChange={handleMoodChange}
+        onNextPrompt={handleNextPrompt}
+        onRetry={handleSearchRetry}
       />
     );
   }
@@ -2599,6 +2728,7 @@ function App() {
         onCloseImage={closeImageViewer}
         imageViewer={imageViewer}
         friendPresence={friendList.find((friend) => friend.user_id === activeFriend?.user_id) || activeFriend}
+        promptSuggestion={chatMode === 'anon' ? getPrompt(searchState.promptId, activeLocale)?.label || null : null}
       />
     );
   }

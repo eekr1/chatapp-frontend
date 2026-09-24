@@ -1,28 +1,36 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import GlassCard from '../components/GlassCard';
 import { useI18n } from '../i18n';
+import { getPrompt } from '../match/promptCatalog';
+import { getSearchDisplayTier, getSearchElapsedMs } from '../state/searchLifecycle';
 
-const MatchScreen = ({ status, offer, onAccept, onReject, onCancel }) => {
-    const { t } = useI18n();
-    const [questionIndex, setQuestionIndex] = useState(0);
+const MOODS = ['random', 'fun', 'casual', 'deep'];
+
+const MatchScreen = ({
+    status,
+    offer,
+    search,
+    onAccept,
+    onReject,
+    onCancel,
+    onMoodChange,
+    onNextPrompt,
+    onRetry
+}) => {
+    const { t, locale } = useI18n();
     const [nowMs, setNowMs] = useState(() => Date.now());
 
     const isOffer = Boolean(offer && typeof offer === 'object');
     const isAccepted = Boolean(offer?.accepted) || status === 'match_waiting';
     const showPeerAcceptedHint = Boolean(offer?.peerAccepted) && !isAccepted;
-
+    const prompt = getPrompt(search?.promptId, locale);
+    const tier = getSearchDisplayTier(search || {}, nowMs);
+    const elapsedMs = getSearchElapsedMs(search || {}, nowMs);
+    const elapsedSeconds = elapsedMs == null ? null : Math.floor(elapsedMs / 1000);
     const peerUsername = String(offer?.peerUsername || '').trim();
     const peerNickname = String(offer?.peerNickname || '').trim();
     const displayUsername = peerUsername || t('chat.anonymous');
     const showNickname = peerNickname && peerNickname !== displayUsername;
-
-    const questions = useMemo(() => ([
-        t('match.q1'),
-        t('match.q2'),
-        t('match.q3'),
-        t('match.q4'),
-        t('match.q5')
-    ]), [t]);
 
     const countdownSeconds = useMemo(() => {
         if (!isOffer || isAccepted) return 0;
@@ -32,178 +40,85 @@ const MatchScreen = ({ status, offer, onAccept, onReject, onCancel }) => {
     }, [isAccepted, isOffer, nowMs, offer?.autoAcceptAt]);
 
     useEffect(() => {
-        if (isOffer) return undefined;
-        const qInterval = setInterval(() => {
-            setQuestionIndex((i) => (i + 1) % questions.length);
-        }, 8000);
-        return () => clearInterval(qInterval);
-    }, [isOffer, questions.length]);
-
-    useEffect(() => {
-        if (!isOffer || isAccepted) return undefined;
-        const timer = setInterval(() => setNowMs(Date.now()), 250);
+        if (!isOffer && !['queued', 'extended'].includes(search?.phase)) return undefined;
+        const timer = setInterval(() => setNowMs(Date.now()), isOffer ? 250 : 1000);
         return () => clearInterval(timer);
-    }, [isAccepted, isOffer, offer?.autoAcceptAt]);
+    }, [isOffer, offer?.autoAcceptAt, search?.phase]);
+
+    const statusKey = ['preparing', 'searching', 'continuing', 'quiet', 'extended', 'reconnecting', 'offline'].includes(tier)
+        ? tier
+        : 'searching';
 
     return (
-        <div className="screen-container center-flex" style={{ justifyContent: 'center' }}>
-            {!isOffer && (
-                <div style={{ position: 'relative', width: 200, height: 200, marginBottom: 50 }}>
-                    <div style={{
-                        position: 'absolute',
-                        width: '100%',
-                        height: '100%',
-                        borderRadius: '50%',
-                        border: '2px solid var(--primary)',
-                        opacity: 0.2,
-                        animation: 'ping 2s cubic-bezier(0, 0, 0.2, 1) infinite'
-                    }} />
-                    <div style={{
-                        position: 'absolute',
-                        width: '70%',
-                        height: '70%',
-                        top: '15%',
-                        left: '15%',
-                        borderRadius: '50%',
-                        border: '2px solid var(--primary)',
-                        opacity: 0.4
-                    }} />
-
-                    <div className="center-flex" style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
-                        color: 'var(--primary)',
-                        filter: 'drop-shadow(0 0 10px var(--primary))'
-                    }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-                        </svg>
+        <main className="match-journey screen-container">
+            <section className="match-journey__content">
+                {!isOffer && (
+                    <div className="match-journey__signal" aria-hidden="true">
+                        <span className="match-journey__particle match-journey__particle--one" />
+                        <span className="match-journey__particle match-journey__particle--two" />
                     </div>
+                )}
 
-                    <svg style={{ position: 'absolute', top: -10, left: -10, width: 220, height: 220, transform: 'rotate(-90deg)' }}>
-                        <circle
-                            cx="110"
-                            cy="110"
-                            r="105"
-                            fill="none"
-                            stroke="var(--primary)"
-                            strokeWidth="2"
-                            strokeDasharray="660"
-                            strokeDashoffset="660"
-                            strokeLinecap="round"
-                            style={{ animation: 'scanProgress 5s linear infinite' }}
-                        />
-                    </svg>
-                </div>
-            )}
-
-            <h2 style={{ marginBottom: 20 }}>{isOffer ? t('match.offerTitle') : t('match.title')}</h2>
-
-            {!isOffer ? (
-                <GlassCard className="animate-slide-up bg-glass" style={{ padding: 25, maxWidth: 320, textAlign: 'center', minHeight: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <p style={{ fontSize: '1.2rem', fontStyle: 'italic', color: 'var(--text-main)' }}>
-                        "{questions[questionIndex]}"
+                <div className="match-journey__eyebrow">TalkX</div>
+                <h1 aria-live="polite">{isOffer ? t('match.offerTitle') : t(`match.status.${statusKey}.title`)}</h1>
+                {!isOffer && (
+                    <p className="match-journey__status-copy">
+                        {t(`match.status.${statusKey}.body`)}
+                        {elapsedSeconds != null && <span className="match-journey__timer">{t('match.elapsed', { seconds: elapsedSeconds })}</span>}
                     </p>
-                </GlassCard>
-            ) : (
-                <GlassCard className="animate-slide-up bg-glass" style={{ padding: 24, maxWidth: 360, width: '100%', textAlign: 'center' }}>
-                    <div style={{ color: 'var(--text-soft)', marginBottom: 8 }}>
-                        {t('match.offerSubtitle', { username: displayUsername })}
-                    </div>
-                    <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                        @{displayUsername}
-                    </div>
-                    {showNickname && (
-                        <div style={{ fontSize: '0.95rem', color: 'var(--text-soft)', marginTop: 6 }}>
-                            {peerNickname}
-                        </div>
-                    )}
-                    <div style={{ marginTop: 16, color: 'var(--text-soft)', minHeight: 24 }}>
-                        {isAccepted
-                            ? t('match.waitingPeer')
-                            : t('match.autoAcceptIn', { seconds: countdownSeconds })}
-                    </div>
+                )}
 
-                    <div style={{ marginTop: 18, display: 'flex', gap: 12 }}>
-                        <button
-                            onClick={onReject}
-                            disabled={isAccepted}
-                            style={{
-                                flex: 1,
-                                padding: 14,
-                                borderRadius: 12,
-                                border: '1px solid var(--danger)',
-                                color: 'var(--danger)',
-                                background: 'transparent',
-                                fontWeight: 600,
-                                cursor: isAccepted ? 'not-allowed' : 'pointer',
-                                opacity: isAccepted ? 0.55 : 1
-                            }}
-                        >
-                            {t('match.reject')}
-                        </button>
-                        <button
-                            onClick={onAccept}
-                            disabled={isAccepted}
-                            style={{
-                                flex: 1,
-                                padding: 14,
-                                borderRadius: 12,
-                                border: '1px solid rgba(0,0,0,0)',
-                                color: '#0d1a23',
-                                background: 'var(--primary)',
-                                fontWeight: 700,
-                                cursor: isAccepted ? 'not-allowed' : 'pointer',
-                                opacity: isAccepted ? 0.7 : 1
-                            }}
-                        >
-                            {t('match.accept')}
-                        </button>
-                    </div>
-                    {showPeerAcceptedHint && (
-                        <div style={{
-                            marginTop: 12,
-                            padding: '10px 12px',
-                            borderRadius: 12,
-                            background: 'rgba(76, 255, 180, 0.12)',
-                            border: '1px solid rgba(76, 255, 180, 0.35)',
-                            color: 'var(--text-main)',
-                            fontSize: '0.9rem',
-                            lineHeight: 1.35
-                        }}>
-                            {t('match.peerAcceptedHint')}
+                {!isOffer ? (
+                    <GlassCard className="match-journey__card animate-slide-up bg-glass">
+                        <div className="match-journey__section-label">{t('match.moodLabel')}</div>
+                        <div className="match-journey__moods" role="group" aria-label={t('match.moodLabel')}>
+                            {MOODS.map((mood) => (
+                                <button
+                                    className={search?.moodId === mood ? 'is-active' : ''}
+                                    key={mood}
+                                    type="button"
+                                    onClick={() => onMoodChange?.(mood)}
+                                    aria-pressed={search?.moodId === mood}
+                                >
+                                    {t(`match.mood.${mood}`)}
+                                </button>
+                            ))}
                         </div>
-                    )}
-                </GlassCard>
-            )}
+                        <div className="match-journey__prompt">
+                            <div>
+                                <span>{t('match.promptLabel')}</span>
+                                <p>{prompt?.label || t('match.promptFallback')}</p>
+                            </div>
+                            <button type="button" onClick={onNextPrompt}>{t('match.nextPrompt')}</button>
+                        </div>
+                        {['extended', 'offline'].includes(tier) && (
+                            <button className="match-journey__retry" type="button" onClick={onRetry}>
+                                {t('match.retry')}
+                            </button>
+                        )}
+                    </GlassCard>
+                ) : (
+                    <GlassCard className="match-journey__card match-journey__offer animate-slide-up bg-glass">
+                        <div className="match-journey__offer-label">{t('match.offerSubtitle', { username: displayUsername })}</div>
+                        <div className="match-journey__peer">@{displayUsername}</div>
+                        {showNickname && <div className="match-journey__nickname">{peerNickname}</div>}
+                        {prompt && <div className="match-journey__offer-prompt">“{prompt.label}”</div>}
+                        <div className="match-journey__offer-state">
+                            {isAccepted ? t('match.waitingPeer') : t('match.autoAcceptIn', { seconds: countdownSeconds })}
+                        </div>
+                        <div className="match-journey__decisions">
+                            <button className="is-reject" onClick={onReject} disabled={isAccepted}>{t('match.reject')}</button>
+                            <button className="is-accept" onClick={onAccept} disabled={isAccepted}>{t('match.accept')}</button>
+                        </div>
+                        {showPeerAcceptedHint && <div className="match-journey__peer-hint">{t('match.peerAcceptedHint')}</div>}
+                    </GlassCard>
+                )}
 
-            <div style={{ marginTop: 26, width: '100%', maxWidth: 300 }}>
-                <button
-                    onClick={onCancel}
-                    style={{
-                        width: '100%',
-                        padding: 14,
-                        background: 'transparent',
-                        border: '1px solid var(--danger)',
-                        color: 'var(--danger)',
-                        borderRadius: 12,
-                        fontSize: '0.98rem',
-                        cursor: 'pointer',
-                        letterSpacing: 0.5
-                    }}
-                >
-                    {t('match.cancel')}
+                <button className="match-journey__cancel" onClick={onCancel} disabled={search?.cancelPending}>
+                    {search?.cancelPending ? t('match.cancelling') : t('match.cancel')}
                 </button>
-            </div>
-
-            <style>{`
-                @keyframes ping { 75%, 100% { transform: scale(1.5); opacity: 0; } }
-                @keyframes scanProgress { from { stroke-dashoffset: 660; } to { stroke-dashoffset: 0; } }
-            `}</style>
-        </div>
+            </section>
+        </main>
     );
 };
 

@@ -76,6 +76,7 @@ const ChatScreen = ({
     imageViewer,
     onAddFriend,
     friendPresence = null,
+    promptSuggestion = null,
 }) => {
     const { t } = useI18n();
     const [inputValue, setInputValue] = useState('');
@@ -364,6 +365,16 @@ const ChatScreen = ({
                     background: 'linear-gradient(to top, var(--bg-deep) 40%, transparent)',
                     zIndex: 50
                 }}>
+                    {promptSuggestion && !inputValue && (
+                        <button
+                            type="button"
+                            className="chat-prompt-suggestion"
+                            onClick={() => setInputValue(promptSuggestion)}
+                        >
+                            <span>{t('match.promptLabel')}</span>
+                            {promptSuggestion}
+                        </button>
+                    )}
                     <GlassCard style={{ padding: 10, borderRadius: 24, display: 'flex', alignItems: 'center', gap: 10, maxWidth: 980, margin: '0 auto' }}>
                         {isFriendMode && (
                             <div ref={mediaMenuRef} className="chat-media-menu-wrap">
