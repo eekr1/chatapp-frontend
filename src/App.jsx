@@ -29,6 +29,11 @@ import {
   isScopeConsistentEvent,
   persistPreferredMatchScope
 } from './state/matchScope';
+import {
+  applyPendingMatchEvent,
+  beginPendingMatchDecision,
+  createPendingMatchOffer
+} from './state/pendingMatch';
 import { chooseNextPrompt, getPrompt } from './match/promptCatalog';
 import {
   applyPresenceUpdate,
@@ -470,6 +475,7 @@ function App() {
   const [nativePermissionsReady, setNativePermissionsReady] = useState(() => !IS_NATIVE);
 
   const ws = useRef(null);
+  const offerTelemetryRef = useRef(new Set());
   const reconnectTimerRef = useRef(null);
   const reconnectAttemptRef = useRef(0);
   const shouldReconnectRef = useRef(false);
@@ -1156,6 +1162,21 @@ function App() {
     ws.current?.readyState === WebSocket.OPEN && wsAuthenticatedRef.current && recoveryReadyRef.current
   ), []);
 
+  useEffect(() => {
+    const matchId = pendingMatchOffer?.matchId;
+    const searchId = pendingMatchOffer?.searchId;
+    if (!matchId || !searchId || screen !== 'matching' || !isWsReady()) return;
+    const key = matchId + ':' + searchId;
+    if (offerTelemetryRef.current.has(key)) return;
+    offerTelemetryRef.current.add(key);
+    ws.current?.send(JSON.stringify({
+      type: 'matchOfferTelemetry',
+      matchId,
+      searchId,
+      eventName: 'match_offer_rendered'
+    }));
+  }, [isWsReady, pendingMatchOffer?.matchId, pendingMatchOffer?.searchId, screen]);
+
   const handleDirectMessageAck = useCallback((data = {}) => {
     const clientMsgId = data.clientMsgId || null;
     if (!clientMsgId) return;
@@ -1381,17 +1402,9 @@ function App() {
               setChatMode('anon');
               updateSearchState({ ...active, type: 'recovery_search', phase: 'offer' });
               updateMatchScope({ ...active, type: 'recovery_search', phase: 'offer' });
-              setStatus(active.decision === 'accepted' ? 'match_waiting' : 'match_offer');
-              setPendingMatchOffer({
-                matchId: active.matchId,
-                peerNickname: active.peerNickname || t('chat.anonymous'),
-                peerUsername: active.peerUsername || '',
-                peerId: active.peerId || null,
-                autoAcceptAt: Number(active.autoAcceptAt),
-                timeoutMs: Number(active.timeoutMs) || 0,
-                peerAccepted: false,
-                accepted: active.decision === 'accepted'
-              });
+              const recoveredOffer = createPendingMatchOffer(active);
+              setStatus(recoveredOffer.phase === 'finalizing' ? 'match_finalizing' : (recoveredOffer.accepted ? 'match_waiting' : 'match_offer'));
+              setPendingMatchOffer(recoveredOffer);
               setScreen('matching');
             } else if (active.kind === 'anonymous_room') {
               setPendingMatchOffer(null);
@@ -1471,50 +1484,47 @@ function App() {
             if (!isScopeConsistentEvent(matchScopeRef.current, data)) break;
             updateSearchState(data);
             updateMatchScope(data);
-            const fallbackName = t('chat.anonymous');
-            const timeoutMsRaw = Number(data.timeoutMs);
-            const timeoutMs = Number.isFinite(timeoutMsRaw)
-              ? Math.max(1000, Math.min(20000, Math.round(timeoutMsRaw)))
-              : 8000;
-            const serverAutoAcceptAt = Number(data.autoAcceptAt);
-            const autoAcceptAt = Number.isFinite(serverAutoAcceptAt)
-              ? serverAutoAcceptAt
-              : Date.now() + timeoutMs;
             playSound();
             setChatMode('anon');
             setStatus('match_offer');
             setRoomId(null);
             setMessages([]);
-            setPeerName(data.peerNickname || fallbackName);
-            setPeerUsername(data.peerUsername || null);
-            setPeerId(data.peerId || null);
-            setPendingMatchOffer({
-              matchId: data.matchId || null,
-              peerNickname: data.peerNickname || fallbackName,
-              peerUsername: data.peerUsername || '',
-              peerId: data.peerId || null,
-              autoAcceptAt,
-              timeoutMs,
-              peerAccepted: false,
-              accepted: false
-            });
+            setPeerName(data.peerPublicLabel || t('chat.anonymous'));
+            setPeerUsername(null);
+            setPeerId(null);
+            setPendingMatchOffer(createPendingMatchOffer(data));
             setScreen('matching');
             break;
           }
           case 'match_offer_peer_accepted':
             if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
-            setPendingMatchOffer((prev) => (prev ? { ...prev, peerAccepted: true } : prev));
+            setPendingMatchOffer((prev) => applyPendingMatchEvent(prev, data));
             break;
           case 'match_offer_waiting':
             if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
             setStatus('match_waiting');
-            setPendingMatchOffer((prev) => (prev ? { ...prev, accepted: true } : prev));
+            setPendingMatchOffer((prev) => applyPendingMatchEvent(prev, data));
+            break;
+          case 'match_decision_result':
+            if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
+            setPendingMatchOffer((prev) => {
+              const next = applyPendingMatchEvent(prev, data);
+              if (next?.phase === 'finalizing') setStatus('match_finalizing');
+              else if (next?.accepted) setStatus('match_waiting');
+              else if (next?.phase === 'closed') setStatus('preparing');
+              return next;
+            });
+            break;
+          case 'match_finalizing':
+            if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
+            setStatus('match_finalizing');
+            setPendingMatchOffer((prev) => applyPendingMatchEvent(prev, data));
             break;
           case 'match_offer_closed':
             if (data.searchId && !shouldAcceptSearchEvent(searchStateRef.current, data)) break;
             setPendingMatchOffer(null);
             setStatus('preparing');
-            if (data.reason === 'peer_rejected') {
+            if (data.reason === 'peer_rejected' || data.reason === 'peer_passed') {
               showToast(appName, t('app.matchPeerRejected'), 3200);
             } else if (data.reason === 'peer_cancelled' || data.reason === 'peer_disconnected') {
               showToast(appName, t('app.matchPeerLeft'), 3200);
@@ -2086,36 +2096,39 @@ function App() {
   };
 
   const handleMatchAccept = () => {
-    if (!pendingMatchOffer) return;
+    if (!pendingMatchOffer || pendingMatchOffer.decisionPending || pendingMatchOffer.accepted) return;
     if (!isWsReady()) {
       showToast(appName, t('app.reconnecting'), 4500);
       connectWsFnRef.current();
       return;
     }
-    setStatus('match_waiting');
-    setPendingMatchOffer((prev) => (prev ? { ...prev, accepted: true } : prev));
+    const commandId = randomId();
+    setPendingMatchOffer((prev) => (prev ? beginPendingMatchDecision(prev, 'accept', commandId) : prev));
     ws.current?.send(JSON.stringify({
       type: 'matchDecision',
-      matchId: pendingMatchOffer.matchId || undefined,
+      protocolVersion: 1,
+      matchId: pendingMatchOffer.matchId,
+      searchId: pendingMatchOffer.searchId,
+      commandId,
       decision: 'accept'
     }));
   };
 
   const handleMatchReject = () => {
-    if (!pendingMatchOffer) return;
+    if (!pendingMatchOffer || pendingMatchOffer.decisionPending || pendingMatchOffer.accepted) return;
     if (!isWsReady()) {
       showToast(appName, t('app.matchDecisionFailed'), 4500);
       return;
     }
-    setPendingMatchOffer(null);
-    setStatus('preparing');
-    const preparing = { ...searchStateRef.current, phase: 'preparing' };
-    searchStateRef.current = preparing;
-    setSearchState(preparing);
+    const commandId = randomId();
+    setPendingMatchOffer((prev) => (prev ? beginPendingMatchDecision(prev, 'pass', commandId) : prev));
     ws.current?.send(JSON.stringify({
       type: 'matchDecision',
-      matchId: pendingMatchOffer.matchId || undefined,
-      decision: 'reject'
+      protocolVersion: 1,
+      matchId: pendingMatchOffer.matchId,
+      searchId: pendingMatchOffer.searchId,
+      commandId,
+      decision: 'pass'
     }));
   };
 

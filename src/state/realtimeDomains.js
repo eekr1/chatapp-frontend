@@ -1,6 +1,6 @@
 const MATCH_EVENTS = new Set([
     'queued', 'search_phase', 'search_error', 'queue_left', 'match_offer', 'match_offer_peer_accepted', 'match_offer_waiting',
-    'match_offer_closed', 'matched', 'message', 'ended'
+    'match_decision_result', 'match_finalizing', 'match_offer_closed', 'matched', 'message', 'ended'
 ]);
 const FRIEND_EVENTS = new Set([
     'direct_message', 'direct_message_ack', 'typing', 'stop_typing',

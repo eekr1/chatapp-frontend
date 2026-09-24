@@ -82,5 +82,7 @@ test('App gates outbox on recovery and guards late friend history and media owne
     assert.match(app, /friendHistoryRequestRef\.current !== historyRequestId/);
     assert.match(app, /current\.ownerMode === chatMode && current\.ownerId === ownerId/);
     assert.match(app, /leaveIntentRef\.current/);
-    assert.match(app, /serverAutoAcceptAt/);
+    assert.match(app, /createPendingMatchOffer\(data\)/);
+    const pendingMatch = await readFile(new URL('../src/state/pendingMatch.js', import.meta.url), 'utf8');
+    assert.match(pendingMatch, /serverClockOffsetMs/);
 });

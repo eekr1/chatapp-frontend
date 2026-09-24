@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import { getPrompt } from '../match/promptCatalog';
 import { getSearchDisplayTier, getSearchElapsedMs } from '../state/searchLifecycle';
 import MatchScopeControl from '../components/MatchScopeControl';
+import { getOfferTiming } from '../state/pendingMatch';
 
 const MOODS = ['random', 'fun', 'casual', 'deep'];
 
@@ -25,23 +26,16 @@ const MatchScreen = ({
     const [nowMs, setNowMs] = useState(() => Date.now());
 
     const isOffer = Boolean(offer && typeof offer === 'object');
-    const isAccepted = Boolean(offer?.accepted) || status === 'match_waiting';
+    const isFinalizing = offer?.phase === 'finalizing' || status === 'match_finalizing';
+    const isAccepted = Boolean(offer?.accepted) || status === 'match_waiting' || isFinalizing;
+    const isDecisionPending = Boolean(offer?.decisionPending);
     const showPeerAcceptedHint = Boolean(offer?.peerAccepted) && !isAccepted;
     const prompt = getPrompt(search?.promptId, locale);
     const tier = getSearchDisplayTier(search || {}, nowMs);
     const elapsedMs = getSearchElapsedMs(search || {}, nowMs);
     const elapsedSeconds = elapsedMs == null ? null : Math.floor(elapsedMs / 1000);
-    const peerUsername = String(offer?.peerUsername || '').trim();
-    const peerNickname = String(offer?.peerNickname || '').trim();
-    const displayUsername = peerUsername || t('chat.anonymous');
-    const showNickname = peerNickname && peerNickname !== displayUsername;
-
-    const countdownSeconds = useMemo(() => {
-        if (!isOffer || isAccepted) return 0;
-        const target = Number(offer?.autoAcceptAt);
-        if (!Number.isFinite(target)) return 0;
-        return Math.max(0, Math.ceil((target - nowMs) / 1000));
-    }, [isAccepted, isOffer, nowMs, offer?.autoAcceptAt]);
+    const peerPublicLabel = String(offer?.peerPublicLabel || '').trim() || t('chat.anonymous');
+    const offerTiming = useMemo(() => getOfferTiming(offer, nowMs), [nowMs, offer]);
 
     useEffect(() => {
         if (!isOffer && !['queued', 'extended'].includes(search?.phase)) return undefined;
@@ -122,23 +116,50 @@ const MatchScreen = ({
                     </GlassCard>
                 ) : (
                     <GlassCard className="match-journey__card match-journey__offer animate-slide-up bg-glass">
-                        <div className="match-journey__offer-label">{t('match.offerSubtitle', { username: displayUsername })}</div>
-                        <div className="match-journey__peer">@{displayUsername}</div>
-                        {showNickname && <div className="match-journey__nickname">{peerNickname}</div>}
+                        <div className="match-journey__offer-visual" aria-hidden="true">
+                            <span className="match-journey__bubble match-journey__bubble--cyan" />
+                            <span className="match-journey__bubble match-journey__bubble--pink" />
+                        </div>
+                        <div className="match-journey__offer-label">{t('match.offerSubtitle')}</div>
+                        <div className="match-journey__peer">{peerPublicLabel}</div>
                         {prompt && <div className="match-journey__offer-prompt">“{prompt.label}”</div>}
-                        <div className="match-journey__offer-state">
-                            {isAccepted ? t('match.waitingPeer') : t('match.autoAcceptIn', { seconds: countdownSeconds })}
+                        {!isAccepted && offerTiming.countdownSeconds != null && (
+                            <div
+                                className="match-journey__offer-progress"
+                                role="progressbar"
+                                aria-label={t('match.autoAcceptProgress')}
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                                aria-valuenow={Math.round(offerTiming.progressPercent)}
+                            >
+                                <span style={{ transform: 'scaleX(' + (offerTiming.progressPercent / 100) + ')' }} />
+                            </div>
+                        )}
+                        <div className="match-journey__offer-state" aria-live="polite">
+                            {isFinalizing
+                                ? t('match.finalizing')
+                                : isDecisionPending
+                                    ? t('match.submittingDecision')
+                                    : isAccepted
+                                        ? t('match.waitingPeer')
+                                        : offerTiming.countdownSeconds == null
+                                            ? t('match.autoAcceptPending')
+                                            : t('match.autoAcceptIn', { seconds: offerTiming.countdownSeconds })}
                         </div>
                         <div className="match-journey__decisions">
-                            <button className="is-reject" onClick={onReject} disabled={isAccepted}>{t('match.reject')}</button>
-                            <button className="is-accept" onClick={onAccept} disabled={isAccepted}>{t('match.accept')}</button>
+                            <button className="is-accept" onClick={onAccept} disabled={isAccepted || isDecisionPending} aria-busy={isDecisionPending && offer?.pendingDecision === 'accept'}>
+                                {t('match.accept')}
+                            </button>
+                            <button className="is-pass" onClick={onReject} disabled={isAccepted || isDecisionPending}>
+                                {t('match.pass')}
+                            </button>
                         </div>
                         {showPeerAcceptedHint && <div className="match-journey__peer-hint">{t('match.peerAcceptedHint')}</div>}
                     </GlassCard>
                 )}
 
                 <button className="match-journey__cancel" onClick={onCancel} disabled={search?.cancelPending}>
-                    {search?.cancelPending ? t('match.cancelling') : t('match.cancel')}
+                    {search?.cancelPending ? t('match.cancelling') : (isOffer ? t('match.cancelMatch') : t('match.cancel'))}
                 </button>
             </section>
         </main>
