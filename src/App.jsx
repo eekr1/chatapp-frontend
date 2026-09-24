@@ -1646,6 +1646,7 @@ function App() {
                 text: data.text,
                 msgType: data.msgType,
                 mediaId: data.mediaId,
+                mediaStatus: data.mediaStatus || (data.msgType === 'image' ? 'available' : undefined),
                 clientMsgId: data.clientMsgId || null,
                 serverMessageId: data.serverMessageId || null,
                 conversationId: data.conversationId || null,
@@ -1679,13 +1680,14 @@ function App() {
           }
           case 'image_sent':
             if (data.clientMsgId) {
-              setMessageSendState(data.clientMsgId, { sendState: 'sent', mediaId: data.mediaId });
+              setMessageSendState(data.clientMsgId, { sendState: 'sent', mediaId: data.mediaId, mediaStatus: data.mediaStatus || 'available' });
             } else {
               setMessages(prev => [...prev, {
                 from: 'me',
                 text: t('chat.photoLabel'),
                 msgType: 'image',
-                mediaId: data.mediaId
+                mediaId: data.mediaId,
+                mediaStatus: data.mediaStatus || 'available'
               }]);
             }
             break;
@@ -1715,7 +1717,7 @@ function App() {
               if (!prev.open || prev.mediaId !== data.mediaId) return prev;
               return { ...prev, status: 'ready', dataUrl: data.imageData, error: null };
             });
-            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
+            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaStatus: data.mediaStatus || 'consumed' } : m));
             break;
           case 'image_error':
             if (imageFetchTimeoutRef.current) {
@@ -1726,7 +1728,7 @@ function App() {
               if (!prev.open || prev.mediaId !== data.mediaId) return prev;
               return { ...prev, status: 'error', error: data.message || t('chat.photoOpenFailed') };
             });
-            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaExpired: true } : m));
+            setMessages(prev => prev.map(m => m.mediaId === data.mediaId ? { ...m, mediaStatus: data.mediaStatus || 'unavailable' } : m));
             break;
           case 'friend_request_incoming': {
             const requestUserId = String(data.request_user_id || data.requestUserId || '').trim();
@@ -2220,6 +2222,7 @@ function App() {
         conversationId: m.conversationId || null,
         mediaId: m.mediaId,
         mediaExpired: m.mediaExpired,
+        mediaStatus: m.mediaStatus || (m.mediaExpired ? 'consumed' : (m.msgType === 'image' ? 'available' : undefined)),
         createdAt: m.createdAt,
         sendState: m.from === 'me' ? 'sent' : undefined
       }));
@@ -2438,9 +2441,8 @@ function App() {
     ws.current?.send(JSON.stringify(payload));
   };
 
-  const handleReport = () => {
-    const reason = window.prompt(t('app.reportPrompt'));
-    const cleanReason = String(reason || '').trim();
+  const handleReport = ({ reasonCategory = 'other', description = '' } = {}) => {
+    const cleanReason = String(description || reasonCategory).trim();
     if (!cleanReason) {
       showToast(appName, t('app.reportReasonRequired'), 5000);
       return;
@@ -2450,7 +2452,16 @@ function App() {
       return;
     }
 
-    const payload = { type: 'report', reason: cleanReason };
+    const subject = [...messages].reverse().find((message) => message.from === 'peer' && (message.serverMessageId || message.mediaId));
+    const payload = {
+      type: 'report',
+      reason: cleanReason,
+      reasonCategory,
+      commandId: randomId()
+    };
+    if (subject?.serverMessageId) payload.messageId = subject.serverMessageId;
+    if (subject?.mediaId) payload.mediaId = subject.mediaId;
+    if (subject?.conversationId) payload.conversationId = subject.conversationId;
     if (chatMode === 'anon') {
       if (roomId) payload.roomId = roomId;
       if (peerId) payload.targetUserId = peerId;
@@ -2629,6 +2640,11 @@ function App() {
 
   const handleSendImage = (base64) => {
     if (chatMode !== 'friends' || !activeFriend?.user_id) return;
+    if (!isWsReady()) {
+      showToast(appName, t('app.connectionMissingPhoto'), 4500);
+      connectWsFnRef.current();
+      return;
+    }
     const clientMsgId = randomId();
     const queueItem = {
       clientMsgId,
@@ -2652,10 +2668,10 @@ function App() {
       text: t('chat.photoLabel'),
       msgType: 'image',
       sendState: 'pending',
+      mediaStatus: 'uploading',
       clientMsgId
     }]);
     enqueueOutboxItem(queueItem);
-    if (!isWsReady()) connectWsFnRef.current();
   };
 
   const handleViewImage = (mediaId) => {
@@ -2920,6 +2936,7 @@ function App() {
         onLeave={handleLeaveChat}
         onNewMatch={handleStartAnon}
         onReport={handleReport}
+        onBlock={chatMode === 'friends' && activeFriend?.user_id ? () => handleBlockUser(activeFriend.user_id) : null}
         onAddFriend={handleAddFriend}
         peerId={peerId}
         isTyping={isPeerTyping}

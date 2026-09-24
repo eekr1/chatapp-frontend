@@ -12,7 +12,9 @@ const parseStoredItems = (storage, accountId) => {
   if (!accountId) return [];
   try {
     const parsed = JSON.parse(storage.getItem(outboxStorageKey(accountId)) || '[]');
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item && item.kind !== 'direct_image_send')
+      : [];
   } catch {
     return [];
   }
@@ -61,7 +63,8 @@ export const clearAccountOutbox = (storage, accountId) => {
 export const persistAccountOutbox = (storage, accountId, items = [], now = Date.now()) => {
   if (!accountId) return [];
   const next = clampOutbox(items, now);
-  storage.setItem(outboxStorageKey(accountId), JSON.stringify(next));
+  const durable = next.filter((item) => item.kind !== 'direct_image_send');
+  storage.setItem(outboxStorageKey(accountId), JSON.stringify(durable));
   return next;
 };
 

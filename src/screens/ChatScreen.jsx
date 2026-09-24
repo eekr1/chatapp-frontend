@@ -74,6 +74,7 @@ const ChatScreen = ({
     onLeave,
     onNewMatch,
     onReport,
+    onBlock,
     peerName,
     isTyping,
     onTyping,
@@ -93,12 +94,18 @@ const ChatScreen = ({
     const [inputValue, setInputValue] = useState('');
     const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
     const [imageError, setImageError] = useState('');
+    const [reportOpen, setReportOpen] = useState(false);
+    const [reportCategory, setReportCategory] = useState('spam');
+    const [reportDescription, setReportDescription] = useState('');
     const [, setPresenceClock] = useState(0);
     const [randomName] = useState(() => COOL_NAMES[Math.floor(Math.random() * COOL_NAMES.length)]);
     const endRef = useRef(null);
     const cameraInputRef = useRef(null);
     const galleryInputRef = useRef(null);
     const mediaMenuRef = useRef(null);
+    const reportDialogRef = useRef(null);
+    const reportButtonRef = useRef(null);
+    const imageViewerRef = useRef(null);
 
     const displayName = peerName || randomName || t('chat.anonymous');
     const avatarInitial = getAvatarInitial(displayName);
@@ -126,6 +133,47 @@ const ChatScreen = ({
         document.addEventListener('pointerdown', onPointerDown);
         return () => document.removeEventListener('pointerdown', onPointerDown);
     }, [mediaMenuOpen]);
+
+    useEffect(() => {
+        if (!reportOpen) return undefined;
+        const reportOpener = reportButtonRef.current;
+        reportDialogRef.current?.focus();
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') setReportOpen(false);
+            if (event.key === 'Tab') {
+                const focusable = [...(reportDialogRef.current?.querySelectorAll('button,select,textarea,[tabindex]:not([tabindex="-1"])') || [])]
+                    .filter((element) => !element.disabled);
+                if (!focusable.length) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('keydown', onKeyDown);
+            reportOpener?.focus();
+        };
+    }, [reportOpen]);
+
+    useEffect(() => {
+        if (!imageViewer?.open) return undefined;
+        imageViewerRef.current?.focus();
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') onCloseImage?.();
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [imageViewer?.open, onCloseImage]);
+
+    const submitReport = (event) => {
+        event.preventDefault();
+        const description = reportDescription.trim();
+        onReport?.({ reasonCategory: reportCategory, description: description || reportCategory });
+        setReportDescription('');
+        setReportOpen(false);
+    };
 
     useEffect(() => {
         if (!isFriendMode || isChatEnded) {
@@ -247,9 +295,14 @@ const ChatScreen = ({
                             {t('chat.addFriend')}
                         </button>
                     )}
-                    <button onClick={onReport} title={t('chat.report')} className="chat-report-btn">
-                        !
+                    <button ref={reportButtonRef} type="button" onClick={() => setReportOpen(true)} title={t('chat.report')} aria-label={t('chat.report')} className="chat-report-btn">
+                        {t('chat.report')}
                     </button>
+                    {onBlock && (
+                        <button type="button" onClick={onBlock} title={t('chat.block')} className="chat-block-btn">
+                            {t('chat.block')}
+                        </button>
+                    )}
                     <button onClick={onLeave} className="chat-leave-btn">
                         {t('chat.leave')}
                     </button>
@@ -270,8 +323,12 @@ const ChatScreen = ({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
                             {m.msgType === 'image' ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    {m.mediaExpired ? (
-                                        <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>{t('chat.photoOpened')}</span>
+                                    {m.mediaExpired || ['consumed', 'expired', 'unavailable'].includes(m.mediaStatus) ? (
+                                        <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                                            {m.mediaStatus === 'expired'
+                                                ? t('chat.photoExpired')
+                                                : (m.mediaStatus === 'unavailable' ? t('chat.photoUnavailable') : t('chat.photoOpened'))}
+                                        </span>
                                     ) : (
                                         m.from === 'me' ? (
                                             <span style={{ fontStyle: 'italic', fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)' }}>{t('chat.photoSent')}</span>
@@ -339,8 +396,39 @@ const ChatScreen = ({
                 </div>
             )}
 
+            {reportOpen && (
+                <div className="wave11-dialog-backdrop" role="presentation" onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) setReportOpen(false);
+                }}>
+                    <form
+                        ref={reportDialogRef}
+                        className="wave11-dialog"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="wave11-report-title"
+                        tabIndex={-1}
+                        onSubmit={submitReport}
+                    >
+                        <h2 id="wave11-report-title">{t('chat.reportTitle')}</h2>
+                        <label htmlFor="wave11-report-category">{t('chat.reportCategory')}</label>
+                        <select id="wave11-report-category" className="input-glass" value={reportCategory} onChange={(event) => setReportCategory(event.target.value)}>
+                            {['spam', 'harassment', 'hate', 'sexual', 'threat', 'scam', 'other'].map((category) => (
+                                <option key={category} value={category}>{t(`chat.reportReason.${category}`)}</option>
+                            ))}
+                        </select>
+                        <label htmlFor="wave11-report-description">{t('chat.reportDescription')}</label>
+                        <textarea id="wave11-report-description" className="input-glass" maxLength={800} value={reportDescription} onChange={(event) => setReportDescription(event.target.value)} />
+                        <p className="wave11-dialog-note">{t('chat.reportEvidenceNote')}</p>
+                        <div className="wave11-dialog-actions">
+                            <button type="button" className="btn-neon" onClick={() => setReportOpen(false)}>{t('common.cancel')}</button>
+                            <button type="submit" className="btn-solid-purple">{t('chat.reportSubmit')}</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
             {imageViewer?.open && (
-                <div className="animate-fade-in" style={{
+                <div ref={imageViewerRef} tabIndex={-1} className="animate-fade-in" role="dialog" aria-modal="true" aria-label={t('chat.photoViewer')} style={{
                     position: 'fixed',
                     top: 0,
                     left: 0,
@@ -354,7 +442,7 @@ const ChatScreen = ({
                     justifyContent: 'center'
                 }}>
                     {imageViewer.status === 'ready' && imageViewer.dataUrl && (
-                        <img src={imageViewer.dataUrl} style={{ maxWidth: '90%', maxHeight: '80vh', borderRadius: 8, border: '2px solid var(--primary)' }} />
+                        <img src={imageViewer.dataUrl} alt={t('chat.photoViewer')} style={{ maxWidth: '90%', maxHeight: '80vh', borderRadius: 8, border: '2px solid var(--primary)' }} />
                     )}
 
                     {imageViewer.status === 'loading' && (

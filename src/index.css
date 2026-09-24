@@ -899,6 +899,52 @@ h4 {
   color: var(--danger);
 }
 
+.chat-block-btn {
+  border: 1px solid rgba(255, 56, 96, 0.65);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: var(--danger);
+  background: rgba(255, 56, 96, 0.12);
+  cursor: pointer;
+}
+
+.wave11-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.wave11-dialog {
+  width: min(100%, 480px);
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  border: 1px solid rgba(122, 252, 255, 0.42);
+  border-radius: 18px;
+  background: var(--bg-deep);
+  box-shadow: var(--glow-cyan);
+}
+
+.wave11-dialog textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.wave11-dialog-note {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.wave11-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .chat-leave-btn {
   background: rgba(255, 56, 96, 0.16);
   color: var(--danger);
