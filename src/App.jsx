@@ -34,6 +34,20 @@ import {
   beginPendingMatchDecision,
   createPendingMatchOffer
 } from './state/pendingMatch';
+import {
+  OUTBOX_ACK_TIMEOUT_MS,
+  OUTBOX_MAX_ATTEMPTS,
+  OUTBOX_RETRY_STEPS_MS,
+  OUTBOX_TTL_MS,
+  applyDirectAck,
+  clampOutbox,
+  clearAccountOutbox,
+  mergeCanonicalMessages,
+  messageFromOutbox,
+  persistAccountOutbox,
+  readAccountOutbox,
+  readExpiredAccountOutbox
+} from './state/messageOutbox';
 import { chooseNextPrompt, getPrompt } from './match/promptCatalog';
 import {
   applyPresenceUpdate,
@@ -80,13 +94,8 @@ const DELIVERY_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const DELIVERY_DEDUPE_MAX = 500;
 const WS_RETRY_STEPS_MS = [1000, 2000, 5000, 10000, 20000, 30000];
 const WS_RETRY_MAX_MS = 30000;
-const OUTBOX_STORAGE_KEY = 'talkx_pending_outbox_v1';
 const RECOVERY_TOKEN_KEY = 'talkx_recovery_token_v1';
 const RECOVERY_EPOCH_KEY = 'talkx_recovery_epoch_v1';
-const OUTBOX_MAX_ITEMS = 100;
-const OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;
-const OUTBOX_ACK_TIMEOUT_MS = 15000;
-const OUTBOX_MAX_ATTEMPTS = 5;
 const PUSH_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const PUSH_LAST_REGISTER_AT_KEY = 'talkx_push_last_register_at';
 const PUSH_LAST_REGISTER_ERROR_KEY = 'talkx_push_last_register_error';
@@ -110,36 +119,16 @@ const randomId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  return `cm-${Math.random().toString(36).slice(2, 12)}-${Date.now().toString(36)}`;
-};
-
-const clampOutbox = (items = []) => {
-  const now = nowTs();
-  const cleaned = (items || [])
-    .filter(Boolean)
-    .filter((item) => (Number(item.expiresAt) || 0) > now)
-    .slice(-OUTBOX_MAX_ITEMS);
-  return cleaned;
-};
-
-const safeParseOutbox = () => {
-  try {
-    const raw = localStorage.getItem(OUTBOX_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return clampOutbox(parsed);
-  } catch {
-    return [];
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
   }
-};
-
-const persistOutbox = (items = []) => {
-  try {
-    localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(clampOutbox(items)));
-  } catch (e) {
-    console.warn('Outbox persistence failed:', e?.message || e);
-  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
 
 const withJitter = (baseMs) => {
@@ -485,6 +474,7 @@ function App() {
   const wsConfigWarnedRef = useRef(false);
   const intentionalCloseRef = useRef(false);
   const typingTimeoutRef = useRef(null);
+  const peerTypingTimeoutRef = useRef(null);
   const lastTypingSentRef = useRef(0);
   const toastTimersRef = useRef(new Map());
   const friendRequestPromptTimersRef = useRef(new Map());
@@ -501,6 +491,8 @@ function App() {
   const pushRetryAttemptRef = useRef(0);
   const seenDeliveryRef = useRef(new Map());
   const outboxRef = useRef([]);
+  const expiredOutboxRef = useRef([]);
+  const outboxAccountRef = useRef(null);
   const ackTimersRef = useRef(new Map());
   const inFlightRef = useRef(new Set());
   const outboxReadyRef = useRef(false);
@@ -615,7 +607,11 @@ function App() {
     const current = outboxRef.current.slice();
     const next = clampOutbox(mutator(current));
     outboxRef.current = next;
-    persistOutbox(next);
+    try {
+      persistAccountOutbox(localStorage, outboxAccountRef.current, next);
+    } catch (e) {
+      console.warn('Outbox persistence failed:', e?.message || e);
+    }
     return next;
   }, []);
 
@@ -627,9 +623,15 @@ function App() {
   }, [applyOutbox, clearAckTimer]);
 
   useEffect(() => {
-    outboxRef.current = safeParseOutbox();
-    outboxReadyRef.current = true;
-  }, []);
+    const accountId = user?.id || null;
+    ackTimersRef.current.forEach((timer) => clearTimeout(timer));
+    ackTimersRef.current.clear();
+    inFlightRef.current.clear();
+    outboxAccountRef.current = accountId;
+    outboxRef.current = accountId ? readAccountOutbox(localStorage, accountId) : [];
+    expiredOutboxRef.current = accountId ? readExpiredAccountOutbox(localStorage, accountId) : [];
+    outboxReadyRef.current = Boolean(accountId);
+  }, [user?.id]);
 
   const clearToastTimers = useCallback((id) => {
     const entry = toastTimersRef.current.get(id);
@@ -1184,18 +1186,29 @@ function App() {
     inFlightRef.current.delete(clientMsgId);
     clearAckTimer(clientMsgId);
 
-    if (data.status === 'sent' || data.status === 'duplicate') {
+    if (['persisted', 'replayed', 'sent', 'duplicate'].includes(data.status)) {
       dropOutboxItem(clientMsgId);
-      setMessageSendState(clientMsgId, {
-        sendState: 'sent',
-        mediaId: data.mediaId || undefined,
-        conversationId: data.conversationId || undefined
-      });
+      setMessages((previous) => mergeCanonicalMessages(applyDirectAck(previous, data)));
+      window.setTimeout(() => flushOutboxFnRef.current(), 0);
       return;
     }
 
+    if (data.retryable) {
+      setMessageSendState(clientMsgId, { sendState: 'failed_retryable', errorCode: data.errorCode || 'SEND_FAILED' });
+      const queued = outboxRef.current.find((item) => item.clientMsgId === clientMsgId);
+      if (queued && (Number(queued.attempts) || 0) < OUTBOX_MAX_ATTEMPTS) {
+        const retryIndex = Math.max(0, Math.min((Number(queued.attempts) || 1) - 1, OUTBOX_RETRY_STEPS_MS.length - 1));
+        const retryTimer = window.setTimeout(() => {
+          ackTimersRef.current.delete(clientMsgId);
+          flushOutboxFnRef.current();
+        }, Math.max(Number(data.retryAfterMs) || 0, withJitter(OUTBOX_RETRY_STEPS_MS[retryIndex])));
+        ackTimersRef.current.set(clientMsgId, retryTimer);
+      }
+      return;
+    }
     dropOutboxItem(clientMsgId);
-    setMessageSendState(clientMsgId, { sendState: 'failed', errorCode: data.errorCode || 'SEND_FAILED' });
+    setMessageSendState(clientMsgId, { sendState: 'failed_terminal', errorCode: data.errorCode || 'SEND_FAILED' });
+    window.setTimeout(() => flushOutboxFnRef.current(), 0);
   }, [clearAckTimer, dropOutboxItem, setMessageSendState]);
 
   const sendOutboxItem = useCallback((item) => {
@@ -1210,6 +1223,10 @@ function App() {
     }
 
     inFlightRef.current.add(item.clientMsgId);
+    setMessageSendState(item.clientMsgId, {
+      sendState: item.kind === 'direct_message' ? 'sending' : 'pending',
+      errorCode: undefined
+    });
     applyOutbox((items) => items.map((entry) => (
       entry.clientMsgId === item.clientMsgId
         ? { ...entry, attempts: (Number(entry.attempts) || 0) + 1, lastAttemptAt: nowTs() }
@@ -1224,25 +1241,30 @@ function App() {
       const current = outboxRef.current.find((entry) => entry.clientMsgId === item.clientMsgId);
       if (!current) return;
       if ((Number(current.attempts) || 0) >= OUTBOX_MAX_ATTEMPTS) {
-        dropOutboxItem(item.clientMsgId);
-        setMessageSendState(item.clientMsgId, { sendState: 'failed', errorCode: 'ACK_TIMEOUT' });
+        setMessageSendState(item.clientMsgId, { sendState: 'pending_unknown', errorCode: 'ACK_TIMEOUT' });
         showToast(appName, t('app.connectionMissingMessage'), 6000);
         return;
       }
 
-      setMessageSendState(item.clientMsgId, { sendState: 'pending' });
-      flushOutboxFnRef.current();
+      setMessageSendState(item.clientMsgId, { sendState: 'pending_unknown' });
+      const retryIndex = Math.max(0, Math.min((Number(current.attempts) || 1) - 1, OUTBOX_RETRY_STEPS_MS.length - 1));
+      const retryTimer = window.setTimeout(() => {
+        ackTimersRef.current.delete(item.clientMsgId);
+        flushOutboxFnRef.current();
+      }, withJitter(OUTBOX_RETRY_STEPS_MS[retryIndex]));
+      ackTimersRef.current.set(item.clientMsgId, retryTimer);
     }, OUTBOX_ACK_TIMEOUT_MS);
     ackTimersRef.current.set(item.clientMsgId, timer);
     return true;
-  }, [appName, applyOutbox, clearAckTimer, dropOutboxItem, isWsReady, setMessageSendState, showToast, t]);
+  }, [appName, applyOutbox, clearAckTimer, isWsReady, setMessageSendState, showToast, t]);
 
   const flushOutbox = useCallback(() => {
     if (!isWsReady()) return;
     const queue = clampOutbox(outboxRef.current.slice())
       .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
     if (!queue.length) return;
-    queue.forEach((item) => sendOutboxItem(item));
+    const next = queue[0];
+    if (next && !inFlightRef.current.has(next.clientMsgId)) sendOutboxItem(next);
   }, [isWsReady, sendOutboxItem]);
 
   useEffect(() => {
@@ -1255,9 +1277,11 @@ function App() {
       const filtered = items.filter((entry) => entry.clientMsgId !== item.clientMsgId);
       return [...filtered, item];
     });
-    setMessageSendState(item.clientMsgId, { sendState: 'pending' });
+    setMessageSendState(item.clientMsgId, {
+      sendState: isWsReady() ? (item.kind === 'direct_message' ? 'sending' : 'pending') : 'queued_offline'
+    });
     flushOutboxFnRef.current();
-  }, [applyOutbox, setMessageSendState]);
+  }, [applyOutbox, isWsReady, setMessageSendState]);
 
   const scheduleReconnect = useCallback(() => {
     if (!shouldReconnectRef.current || intentionalCloseRef.current || !user) return;
@@ -1564,15 +1588,32 @@ function App() {
             const errorCode = String(data.errorCode || data.code || 'SERVER_ERROR').slice(0, 120);
             setLastErrorCode(errorCode);
             if (data.clientMsgId) {
-                dropOutboxItem(data.clientMsgId);
-                setMessageSendState(data.clientMsgId, { sendState: 'failed', errorCode });
+                inFlightRef.current.delete(data.clientMsgId);
+                clearAckTimer(data.clientMsgId);
+                if (data.retryable === true) {
+                  setMessageSendState(data.clientMsgId, { sendState: 'failed_retryable', errorCode });
+                  const queued = outboxRef.current.find((item) => item.clientMsgId === data.clientMsgId);
+                  if (queued && (Number(queued.attempts) || 0) < OUTBOX_MAX_ATTEMPTS) {
+                    const retryIndex = Math.max(0, Math.min((Number(queued.attempts) || 1) - 1, OUTBOX_RETRY_STEPS_MS.length - 1));
+                    const retryTimer = window.setTimeout(() => {
+                      ackTimersRef.current.delete(data.clientMsgId);
+                      flushOutboxFnRef.current();
+                    }, Math.max(Number(data.retryAfterMs) || 0, withJitter(OUTBOX_RETRY_STEPS_MS[retryIndex])));
+                    ackTimersRef.current.set(data.clientMsgId, retryTimer);
+                  }
+                } else if (data.retryable === false) {
+                  dropOutboxItem(data.clientMsgId);
+                  setMessageSendState(data.clientMsgId, { sendState: 'failed_terminal', errorCode });
+                  window.setTimeout(() => flushOutboxFnRef.current(), 0);
+                } else {
+                  setMessageSendState(data.clientMsgId, { sendState: 'pending_unknown', errorCode });
+                }
             }
             if (errorCode === 'AUTH_ERROR' || errorCode === 'SESSION_REVOKED') {
               ackTimersRef.current.forEach((t) => clearTimeout(t));
               ackTimersRef.current.clear();
               inFlightRef.current.clear();
               outboxRef.current = [];
-              persistOutbox([]);
               setWsStatus('auth_error');
               shouldReconnectRef.current = false;
               localStorage.removeItem('session_token');
@@ -1591,20 +1632,27 @@ function App() {
             if (!shouldProcessDelivery(deliveryId)) break;
             const currentActive = activeFriendRef.current;
             const currentMode = chatModeRef.current;
+            const isSenderSibling = senderId === user?.id;
+            const conversationPeerId = isSenderSibling ? data.targetUserId : senderId;
             const isActiveConversation =
               screenRef.current === 'chat' &&
               currentMode === 'friends' &&
               currentActive &&
-              currentActive.user_id === senderId;
+              currentActive.user_id === conversationPeerId;
 
             if (isActiveConversation) {
-              setMessages(prev => [...prev, {
-                from: 'peer',
+              setMessages(prev => mergeCanonicalMessages(prev, [{
+                from: isSenderSibling ? 'me' : 'peer',
                 text: data.text,
                 msgType: data.msgType,
-                mediaId: data.mediaId
-              }]);
-            } else {
+                mediaId: data.mediaId,
+                clientMsgId: data.clientMsgId || null,
+                serverMessageId: data.serverMessageId || null,
+                conversationId: data.conversationId || null,
+                createdAt: data.createdAt || null,
+                sendState: isSenderSibling ? 'sent' : undefined
+              }]));
+            } else if (!isSenderSibling) {
               setUnreadCounts(prev => ({
                 ...prev,
                 [senderId]: (prev[senderId] || 0) + 1
@@ -1643,8 +1691,15 @@ function App() {
             break;
           case 'typing':
             setIsPeerTyping(true);
+            if (peerTypingTimeoutRef.current) clearTimeout(peerTypingTimeoutRef.current);
+            peerTypingTimeoutRef.current = window.setTimeout(() => {
+              peerTypingTimeoutRef.current = null;
+              setIsPeerTyping(false);
+            }, 4000);
             break;
           case 'stop_typing':
+            if (peerTypingTimeoutRef.current) clearTimeout(peerTypingTimeoutRef.current);
+            peerTypingTimeoutRef.current = null;
             setIsPeerTyping(false);
             break;
           case 'ended':
@@ -1741,7 +1796,7 @@ function App() {
       setWsStatus('disconnected');
       if (!intentionalCloseRef.current) scheduleReconnect();
     };
-  }, [activeLocale, appName, dropOutboxItem, enqueueFriendRequestPrompt, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, t, updateMatchScope, updateSearchState, user]);
+  }, [activeLocale, appName, clearAckTimer, dropOutboxItem, enqueueFriendRequestPrompt, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, t, updateMatchScope, updateSearchState, user]);
 
   useEffect(() => {
     connectWsFnRef.current = connect;
@@ -1941,7 +1996,8 @@ function App() {
     ackTimersRef.current.clear();
     inFlightRef.current.clear();
     outboxRef.current = [];
-    persistOutbox([]);
+    expiredOutboxRef.current = [];
+    outboxAccountRef.current = null;
 
     if (pushTokenRef.current) {
       try {
@@ -1999,6 +2055,7 @@ function App() {
 
   const handleAccountDeletionRequested = async (message) => {
     const finalMessage = String(message || '').trim() || t('home.deleteRequestSubmitted');
+    clearAccountOutbox(localStorage, user?.id);
     await handleLogout();
     showToast(appName, `${finalMessage} ${t('app.accountDeletionPostfix')}`, 8200);
   };
@@ -2159,22 +2216,22 @@ function App() {
         text: m.text,
         msgType: m.msgType,
         clientMsgId: m.clientMsgId || null,
+        serverMessageId: m.serverMessageId || null,
+        conversationId: m.conversationId || null,
         mediaId: m.mediaId,
         mediaExpired: m.mediaExpired,
+        createdAt: m.createdAt,
         sendState: m.from === 'me' ? 'sent' : undefined
       }));
-      const sentClientIds = new Set(histMsgs.map((m) => m.clientMsgId).filter(Boolean));
-      const pendingMsgs = outboxRef.current
-        .filter((entry) => entry.targetUserId === friend.user_id && !sentClientIds.has(entry.clientMsgId))
-        .map((entry) => ({
-          from: 'me',
-          text: entry.kind === 'direct_image_send' ? t('chat.photoLabel') : entry.text,
-          msgType: entry.kind === 'direct_image_send' ? 'image' : 'direct',
-          sendState: 'pending',
-          clientMsgId: entry.clientMsgId
-        }));
+      const historyClientIds = new Set(histMsgs.map((message) => message.clientMsgId).filter(Boolean));
+      const pendingMsgs = [...outboxRef.current, ...expiredOutboxRef.current]
+        .filter((entry) => entry.targetUserId === friend.user_id)
+        .map((entry) => messageFromOutbox(entry, t('chat.photoLabel')));
       if (friendHistoryRequestRef.current !== historyRequestId || activeFriendRef.current?.user_id !== friend.user_id) return;
-      setMessages([...histMsgs, ...pendingMsgs]);
+      if (historyClientIds.size > 0) {
+        applyOutbox((items) => items.filter((item) => !historyClientIds.has(item.clientMsgId)));
+      }
+      setMessages(mergeCanonicalMessages(pendingMsgs, histMsgs));
     } catch (e) {
       console.error('History error', e);
     }
@@ -2314,6 +2371,7 @@ function App() {
         lastAttemptAt: 0,
         payload: {
           type: 'direct_message',
+          protocolVersion: 1,
           targetUserId: activeFriend.user_id,
           text,
           clientMsgId
@@ -2324,7 +2382,8 @@ function App() {
         from: 'me',
         text,
         msgType: 'direct',
-        sendState: 'pending',
+        sendState: isWsReady() ? 'sending' : 'queued_offline',
+        createdAt: queueItem.createdAt,
         clientMsgId
       }]);
       enqueueOutboxItem(queueItem);
@@ -2333,6 +2392,19 @@ function App() {
     }
 
     if (IS_DEV) console.warn('[App] Message not sent: invalid state', { chatMode, roomId, activeFriend });
+  };
+
+  const handleRetryMessage = (clientMsgId) => {
+    const queued = outboxRef.current.find((item) => item.clientMsgId === clientMsgId);
+    if (!queued || queued.kind !== 'direct_message') return;
+    applyOutbox((items) => items.map((item) => (
+      item.clientMsgId === clientMsgId
+        ? { ...item, attempts: 0, lastAttemptAt: 0, sendState: 'pending' }
+        : item
+    )));
+    setMessageSendState(clientMsgId, { sendState: isWsReady() ? 'sending' : 'queued_offline', errorCode: undefined });
+    if (isWsReady()) flushOutboxFnRef.current();
+    else connectWsFnRef.current();
   };
 
   const handleTyping = () => {
@@ -2354,6 +2426,16 @@ function App() {
         : { type: 'stop_typing' };
       ws.current?.send(JSON.stringify(stopPayload));
     }, 1000);
+  };
+
+  const handleStopTyping = () => {
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = null;
+    if (!isWsReady()) return;
+    const payload = chatMode === 'friends' && activeFriend
+      ? { type: 'stop_typing', targetUserId: activeFriend.user_id }
+      : { type: 'stop_typing' };
+    ws.current?.send(JSON.stringify(payload));
   };
 
   const handleReport = () => {
@@ -2834,6 +2916,7 @@ function App() {
         currentUserId={user.id}
         peerName={peerName}
         onSend={handleSendMessage}
+        onRetryMessage={handleRetryMessage}
         onLeave={handleLeaveChat}
         onNewMatch={handleStartAnon}
         onReport={handleReport}
@@ -2841,6 +2924,7 @@ function App() {
         peerId={peerId}
         isTyping={isPeerTyping}
         onTyping={handleTyping}
+        onStopTyping={handleStopTyping}
         isFriendMode={chatMode === 'friends'}
         isChatEnded={status === 'ended'}
         onSendImage={handleSendImage}

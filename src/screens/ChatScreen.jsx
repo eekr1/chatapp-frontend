@@ -23,6 +23,8 @@ const CameraIcon = () => (
 
 const COOL_NAMES = ['ShadowFox', 'NeonWraith', 'VoidRaven', 'EclipseOwl', 'CyberWolf', 'GhostDrifter'];
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_DIRECT_TEXT_CODE_POINTS = 2000;
+const MAX_DIRECT_TEXT_BYTES = 8000;
 const getAvatarInitial = (name) => {
     const normalized = String(name || '').trim();
     if (!normalized) return '?';
@@ -57,16 +59,25 @@ const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
     reader.onerror = () => reject(new Error('FILE_READ_FAILED'));
     reader.readAsDataURL(file);
 });
+const resolveSendError = (message, t) => {
+    if (message.sendState === 'expired_local') return t('chat.sendExpired');
+    if (message.errorCode === 'NOT_FRIEND') return t('chat.sendNotFriend');
+    if (message.errorCode === 'MESSAGE_TOO_LONG') return t('chat.messageTooLong');
+    if (message.errorCode === 'MESSAGE_ID_CONFLICT') return t('chat.sendConflict');
+    return t('chat.sendFailed');
+};
 
 const ChatScreen = ({
     messages,
     onSend,
+    onRetryMessage,
     onLeave,
     onNewMatch,
     onReport,
     peerName,
     isTyping,
     onTyping,
+    onStopTyping,
     isFriendMode = false,
     isChatEnded = false,
     onSendImage,
@@ -127,13 +138,23 @@ const ChatScreen = ({
     const handleSubmit = (e) => {
         if (e?.preventDefault) e.preventDefault();
         if (!inputValue.trim() || isChatEnded) return;
-        onSend(inputValue);
+        const normalized = inputValue.normalize('NFC').trim();
+        if (isFriendMode && (
+            Array.from(normalized).length > MAX_DIRECT_TEXT_CODE_POINTS
+            || new TextEncoder().encode(normalized).byteLength > MAX_DIRECT_TEXT_BYTES
+        )) {
+            setImageError(t('chat.messageTooLong'));
+            return;
+        }
+        setImageError('');
+        onSend(isFriendMode ? normalized : inputValue);
         setInputValue('');
         setMediaMenuOpen(false);
     };
 
     const handleInput = (e) => {
         setInputValue(e.target.value);
+        if (imageError) setImageError('');
         if (onTyping) onTyping();
     };
 
@@ -245,7 +266,7 @@ const ChatScreen = ({
                 gap: 12
             }}>
                 {messages.map((m, i) => (
-                    <div key={i} className={m.from === 'me' ? 'chat-bubble-me animate-slide-up' : 'chat-bubble-peer animate-slide-up'}>
+                    <div key={m.serverMessageId || m.clientMsgId || `message-${i}`} className={m.from === 'me' ? 'chat-bubble-me animate-slide-up' : 'chat-bubble-peer animate-slide-up'}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
                             {m.msgType === 'image' ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -264,11 +285,18 @@ const ChatScreen = ({
                             ) : (
                                 <span className="chat-message-text">{applySoftWrap(m.text)}</span>
                             )}
-                            {m.from === 'me' && m.sendState === 'pending' && (
+                            {m.from === 'me' && ['pending', 'sending', 'queued_offline'].includes(m.sendState) && (
                                 <span style={{ fontSize: '0.72rem', opacity: 0.75 }}>{t('chat.sending')}</span>
                             )}
-                            {m.from === 'me' && m.sendState === 'failed' && (
-                                <span style={{ fontSize: '0.72rem', color: 'var(--danger)' }}>{t('chat.sendFailed')}</span>
+                            {m.from === 'me' && ['failed_retryable', 'failed_terminal', 'pending_unknown', 'expired_local'].includes(m.sendState) && (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--danger)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                                    {resolveSendError(m, t)}
+                                    {['failed_retryable', 'pending_unknown'].includes(m.sendState) && m.msgType !== 'image' && (
+                                        <button type="button" className="btn-neon-sm" onClick={() => onRetryMessage?.(m.clientMsgId)}>
+                                            {t('chat.retry')}
+                                        </button>
+                                    )}
+                                </span>
                             )}
                         </div>
                     </div>
@@ -421,6 +449,7 @@ const ChatScreen = ({
                                 placeholder={t('chat.writeMessage')}
                                 value={inputValue}
                                 onChange={handleInput}
+                                onBlur={onStopTyping}
                             />
                         </form>
 
@@ -447,6 +476,11 @@ const ChatScreen = ({
                         </button>
                     </GlassCard>
                     {imageError && <div className="chat-image-error">{imageError}</div>}
+                    {isFriendMode && Array.from(inputValue.normalize('NFC')).length > 1800 && (
+                        <div className="chat-image-error">
+                            {Array.from(inputValue.normalize('NFC')).length}/{MAX_DIRECT_TEXT_CODE_POINTS}
+                        </div>
+                    )}
                 </div>
             )}
 
