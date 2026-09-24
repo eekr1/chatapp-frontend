@@ -93,5 +93,5 @@ test('Wave 07 UI is manually advanced and websocket commands carry lifecycle ide
   assert.match(chatSource, /setInputValue\(promptSuggestion\)/);
   assert.doesNotMatch(chatSource, /onSend\(promptSuggestion\)/);
   assert.doesNotMatch(screenSource, /setInterval\(.*question/i);
-  assert.doesNotMatch(appSource, /effectiveMatchScope|preferredMatchScope|country_fallback_available/);
+  assert.match(appSource, /effectiveMatchScope|country_fallback_available/);
 });

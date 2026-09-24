@@ -3,6 +3,7 @@ import GlassCard from '../components/GlassCard';
 import { useI18n } from '../i18n';
 import { getPrompt } from '../match/promptCatalog';
 import { getSearchDisplayTier, getSearchElapsedMs } from '../state/searchLifecycle';
+import MatchScopeControl from '../components/MatchScopeControl';
 
 const MOODS = ['random', 'fun', 'casual', 'deep'];
 
@@ -15,7 +16,10 @@ const MatchScreen = ({
     onCancel,
     onMoodChange,
     onNextPrompt,
-    onRetry
+    onRetry,
+    matchScope,
+    onScopeChange,
+    onFallbackContinue
 }) => {
     const { t, locale } = useI18n();
     const [nowMs, setNowMs] = useState(() => Date.now());
@@ -66,6 +70,25 @@ const MatchScreen = ({
                         {t(`match.status.${statusKey}.body`)}
                         {elapsedSeconds != null && <span className="match-journey__timer">{t('match.elapsed', { seconds: elapsedSeconds })}</span>}
                     </p>
+                )}
+
+                {!isOffer && (
+                    <MatchScopeControl
+                        state={matchScope}
+                        active
+                        disabled={search?.cancelPending}
+                        onChange={onScopeChange}
+                    />
+                )}
+
+                {!isOffer && matchScope?.fallbackStatus === 'visible' && (
+                    <div className="match-fallback" role="status">
+                        <p>{t('match.scope.fallback')}</p>
+                        <div>
+                            <button type="button" onClick={() => onScopeChange?.('GLOBAL')}>{t('match.scope.goGlobal')}</button>
+                            <button type="button" onClick={onFallbackContinue}>{t('match.scope.continueCountry')}</button>
+                        </div>
+                    </div>
                 )}
 
                 {!isOffer ? (

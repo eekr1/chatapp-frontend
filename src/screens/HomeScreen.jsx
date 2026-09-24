@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import GlassCard from '../components/GlassCard';
 import { getLocalizedApiError, profile } from '../api';
 import { useI18n } from '../i18n';
+import MatchScopeControl from '../components/MatchScopeControl';
 
 const SUPPORT_SUBJECTS = [
     { value: 'connection', labelKey: 'support.subject.connection' },
@@ -53,7 +54,9 @@ const HomeScreen = ({
     onLogout,
     onSupportSubmit,
     supportSubmitting = false,
-    legalFooter = DEFAULT_LEGAL_FOOTER
+    legalFooter = DEFAULT_LEGAL_FOOTER,
+    matchScope,
+    onScopeChange
 }) => {
     const { t } = useI18n();
     const footer = { ...DEFAULT_LEGAL_FOOTER, ...(legalFooter || {}) };
@@ -351,6 +354,7 @@ const HomeScreen = ({
                         {t('home.servicePrivacy')}
                     </p>
                 </div>
+                <MatchScopeControl state={matchScope} onChange={onScopeChange} />
                 <div
                     className="center-flex"
                     style={{ gap: 15, cursor: 'pointer', transition: 'transform 0.2s', width: '100%' }}

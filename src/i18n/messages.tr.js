@@ -193,6 +193,18 @@
         nextPrompt: 'Baska soru',
         retry: 'Aramayi yeniden baslat',
         searchConflict: 'Baska bir arama zaten aktif. Geri yuklemek icin yeniden baglan.',
+        scope: {
+            label: 'Kiminle tanismak istersin?',
+            global: 'Global',
+            country: '{country}',
+            myCountry: 'Ulkem',
+            unavailable: 'Ulke eslesmesi henuz kullanilamiyor. Global secenegi acik.',
+            switching: 'Arama alani degistiriliyor...',
+            failed: 'Arama alani degistirilemedi. Onceki araman devam ediyor.',
+            fallback: 'Bu arama biraz uzun suruyor. Burada devam edebilir veya acikca Global secebilirsin.',
+            goGlobal: 'Global aramaya gec',
+            continueCountry: 'Burada aramaya devam et'
+        },
         status: {
             preparing: { title: 'Araman hazirlaniyor', body: 'Sunucunun sirani onaylamasi bekleniyor.' },
             searching: { title: 'Biri araniyor', body: 'Araman aktif.' },

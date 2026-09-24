@@ -22,6 +22,13 @@ import {
   createSearchIntent,
   shouldAcceptSearchEvent
 } from './state/searchLifecycle';
+import {
+  INITIAL_MATCH_SCOPE_STATE,
+  applyMatchScopeEvent,
+  hydrateMatchScope,
+  isScopeConsistentEvent,
+  persistPreferredMatchScope
+} from './state/matchScope';
 import { chooseNextPrompt, getPrompt } from './match/promptCatalog';
 import {
   applyPresenceUpdate,
@@ -441,6 +448,7 @@ function App() {
   const [peerId, setPeerId] = useState(null);
   const [pendingMatchOffer, setPendingMatchOffer] = useState(null);
   const [searchState, setSearchState] = useState(INITIAL_SEARCH_STATE);
+  const [matchScope, setMatchScope] = useState(INITIAL_MATCH_SCOPE_STATE);
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [roomId, setRoomId] = useState(null);
   const [chatMode, setChatMode] = useState('anon');
@@ -477,6 +485,8 @@ function App() {
   const seenFriendRequestRef = useRef(new Map());
   const noticesRef = useRef(notices);
   const searchStateRef = useRef(searchState);
+  const matchScopeRef = useRef(matchScope);
+  const scopeChangePreviousRef = useRef(null);
   const restartSearchAfterCancelRef = useRef(false);
   const startAnonFnRef = useRef(() => { });
   const pushTokenRef = useRef(null);
@@ -512,11 +522,20 @@ function App() {
   useEffect(() => { screenRef.current = screen; }, [screen]);
   useEffect(() => { noticesRef.current = notices; }, [notices]);
   useEffect(() => { searchStateRef.current = searchState; }, [searchState]);
+  useEffect(() => { matchScopeRef.current = matchScope; }, [matchScope]);
 
   const updateSearchState = useCallback((event) => {
     setSearchState((previous) => {
       const next = applySearchEvent(previous, event);
       searchStateRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const updateMatchScope = useCallback((event) => {
+    setMatchScope((previous) => {
+      const next = applyMatchScopeEvent(previous, event);
+      matchScopeRef.current = next;
       return next;
     });
   }, []);
@@ -1300,6 +1319,11 @@ function App() {
             wsAuthenticatedRef.current = true;
             reconnectAttemptRef.current = 0;
             setWsStatus('reconnecting');
+            {
+              const hydrated = hydrateMatchScope(user?.id, data.matchScopes);
+              matchScopeRef.current = hydrated;
+              setMatchScope(hydrated);
+            }
             break;
           case 'recovery_snapshot': {
             const parsed = parseRecoverySnapshot(data);
@@ -1311,6 +1335,7 @@ function App() {
               setPendingMatchOffer(null);
               setRoomId(null);
               updateSearchState({ type: 'search_reset' });
+              updateMatchScope({ type: 'scope_reset' });
               if (chatModeRef.current === 'anon') {
                 setMessages([]);
                 setStatus('disconnected');
@@ -1334,6 +1359,7 @@ function App() {
               setPendingMatchOffer(null);
               setRoomId(null);
               updateSearchState({ type: 'search_reset' });
+              updateMatchScope({ type: 'scope_reset' });
               if (chatModeRef.current === 'anon' && ['matching', 'chat'].includes(screenRef.current)) {
                 setMessages([]);
                 setPeerName(null);
@@ -1346,6 +1372,7 @@ function App() {
               setPendingMatchOffer(null);
               setRoomId(null);
               updateSearchState({ ...active, type: 'recovery_search' });
+              updateMatchScope({ ...active, type: 'recovery_search' });
               setStatus('queued');
               setChatMode('anon');
               setScreen('matching');
@@ -1353,6 +1380,7 @@ function App() {
               setRoomId(null);
               setChatMode('anon');
               updateSearchState({ ...active, type: 'recovery_search', phase: 'offer' });
+              updateMatchScope({ ...active, type: 'recovery_search', phase: 'offer' });
               setStatus(active.decision === 'accepted' ? 'match_waiting' : 'match_offer');
               setPendingMatchOffer({
                 matchId: active.matchId,
@@ -1385,6 +1413,9 @@ function App() {
           case 'queued':
             if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
             updateSearchState(data);
+            updateMatchScope(data);
+            scopeChangePreviousRef.current = null;
+            if (user?.id && data.effectiveMatchScope) persistPreferredMatchScope(user.id, data.effectiveMatchScope);
             setPendingMatchOffer(null);
             setStatus('queued');
             setScreen('matching');
@@ -1394,11 +1425,34 @@ function App() {
             break;
           case 'search_error':
             if (data.commandId !== searchStateRef.current.commandId) break;
+            updateMatchScope(data);
             updateSearchState({ type: 'search_reset' });
             setPendingMatchOffer(null);
             setStatus('idle');
             setScreen('home');
-            showToast(appName, t('match.searchConflict'), 5000);
+            showToast(
+              appName,
+              data.errorCode === 'MATCH_COUNTRY_UNAVAILABLE' || data.errorCode === 'MATCH_COUNTRY_STALE'
+                ? t('match.scope.unavailable')
+                : t('match.searchConflict'),
+              5000
+            );
+            break;
+          case 'match_scope_change_failed':
+            if (data.commandId !== searchStateRef.current.commandId) break;
+            updateMatchScope(data);
+            if (scopeChangePreviousRef.current) {
+              searchStateRef.current = scopeChangePreviousRef.current;
+              setSearchState(scopeChangePreviousRef.current);
+              scopeChangePreviousRef.current = null;
+            }
+            showToast(appName, t('match.scope.failed'), 4500);
+            break;
+          case 'country_fallback_available':
+          case 'country_fallback_ack':
+            if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
+            updateSearchState(data);
+            updateMatchScope(data);
             break;
           case 'queue_left':
             if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
@@ -1414,7 +1468,9 @@ function App() {
             break;
           case 'match_offer': {
             if (!shouldAcceptSearchEvent(searchStateRef.current, data)) break;
+            if (!isScopeConsistentEvent(matchScopeRef.current, data)) break;
             updateSearchState(data);
+            updateMatchScope(data);
             const fallbackName = t('chat.anonymous');
             const timeoutMsRaw = Number(data.timeoutMs);
             const timeoutMs = Number.isFinite(timeoutMsRaw)
@@ -1675,7 +1731,7 @@ function App() {
       setWsStatus('disconnected');
       if (!intentionalCloseRef.current) scheduleReconnect();
     };
-  }, [activeLocale, appName, dropOutboxItem, enqueueFriendRequestPrompt, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, t, updateSearchState, user]);
+  }, [activeLocale, appName, dropOutboxItem, enqueueFriendRequestPrompt, handleDirectMessageAck, loadFriends, normalizeAdminNotice, notifyIncoming, playSound, scheduleReconnect, setMessageSendState, shouldProcessDelivery, showToast, t, updateMatchScope, updateSearchState, user]);
 
   useEffect(() => {
     connectWsFnRef.current = connect;
@@ -1898,6 +1954,8 @@ function App() {
     setStatus('disconnected');
     setWsStatus('disconnected');
     setOnlineCount(0);
+    matchScopeRef.current = { ...INITIAL_MATCH_SCOPE_STATE };
+    setMatchScope({ ...INITIAL_MATCH_SCOPE_STATE });
 
     setFriendList([]);
     setFriendRequests([]);
@@ -1959,11 +2017,56 @@ function App() {
       type: 'joinQueue',
       protocolVersion: intent.protocolVersion,
       searchId: intent.searchId,
-      commandId: intent.commandId
+      commandId: intent.commandId,
+      scope: matchScopeRef.current.capability ? matchScopeRef.current.preferredMatchScope : undefined
     }));
     setScreen('matching');
   };
   startAnonFnRef.current = handleStartAnon;
+
+  const handleHomeScopeChange = (scope) => {
+    if (!matchScopeRef.current.capability || (scope === 'COUNTRY' && !matchScopeRef.current.countryAvailable)) return;
+    updateMatchScope({ type: 'scope_preference', scope });
+    if (user?.id) persistPreferredMatchScope(user.id, scope);
+  };
+
+  const handleActiveScopeChange = (scope) => {
+    const current = searchStateRef.current;
+    if (!isWsReady() || !current.searchId || matchScopeRef.current.scopeChangeStatus === 'switching') return;
+    if (scope === matchScopeRef.current.effectiveMatchScope) return;
+    const next = createSearchIntent({
+      searchId: randomId(),
+      commandId: randomId(),
+      moodId: current.moodId,
+      promptId: current.promptId,
+      recentPromptIds: current.recentPromptIds
+    });
+    scopeChangePreviousRef.current = current;
+    searchStateRef.current = next;
+    setSearchState(next);
+    updateMatchScope({ type: 'scope_switching' });
+    setStatus('preparing');
+    ws.current?.send(JSON.stringify({
+      type: 'changeMatchScope',
+      protocolVersion: next.protocolVersion,
+      fromSearchId: current.searchId,
+      searchId: next.searchId,
+      commandId: next.commandId,
+      scope
+    }));
+  };
+
+  const handleFallbackContinue = () => {
+    const current = searchStateRef.current;
+    if (!isWsReady() || !current.searchId) return;
+    ws.current?.send(JSON.stringify({
+      type: 'countryFallbackAction',
+      protocolVersion: current.protocolVersion,
+      searchId: current.searchId,
+      commandId: randomId(),
+      action: 'continue'
+    }));
+  };
 
   const handleMoodChange = (moodId) => {
     const promptId = chooseNextPrompt({ category: moodId });
@@ -2661,6 +2764,8 @@ function App() {
         legalFooter={localizedLegalFooter}
         currentLocale={activeLocale}
         onLocaleChange={handleLocaleChange}
+        matchScope={matchScope}
+        onScopeChange={handleHomeScopeChange}
         onSelectMode={(mode) => {
           if (mode === 'anon') handleStartAnon();
           else if (mode === 'friends') {
@@ -2702,6 +2807,9 @@ function App() {
         onMoodChange={handleMoodChange}
         onNextPrompt={handleNextPrompt}
         onRetry={handleSearchRetry}
+        matchScope={matchScope}
+        onScopeChange={handleActiveScopeChange}
+        onFallbackContinue={handleFallbackContinue}
       />
     );
   }

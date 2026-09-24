@@ -193,6 +193,18 @@
         nextPrompt: 'Another question',
         retry: 'Restart search',
         searchConflict: 'Another search is already active. Reconnect to restore it.',
+        scope: {
+            label: 'Who do you want to meet?',
+            global: 'Global',
+            country: '{country}',
+            myCountry: 'My country',
+            unavailable: 'Your country is not available for matching yet. Global remains available.',
+            switching: 'Changing search area...',
+            failed: 'The search area could not be changed. Your previous search continues.',
+            fallback: 'This search is taking longer. You can keep searching here or explicitly switch to Global.',
+            goGlobal: 'Switch to Global',
+            continueCountry: 'Keep searching here'
+        },
         status: {
             preparing: { title: 'Preparing your search', body: 'Waiting for the server to confirm your place.' },
             searching: { title: 'Looking for someone', body: 'Your search is active.' },
