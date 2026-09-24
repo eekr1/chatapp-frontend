@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import GlassCard from '../components/GlassCard';
 import { getLocalizedApiError, profile } from '../api';
 import { useI18n } from '../i18n';
@@ -41,6 +41,9 @@ const FriendsIcon = () => (
 
 const isEmailValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 const isExternalUrl = (value) => /^https:\/\//i.test(String(value || '').trim());
+const createCommandId = () => (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : `command-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 
 const HomeScreen = ({
     currentUser,
@@ -55,6 +58,7 @@ const HomeScreen = ({
     onSupportSubmit,
     supportSubmitting = false,
     legalFooter = DEFAULT_LEGAL_FOOTER,
+    onManagePermissions,
     matchScope,
     onScopeChange
 }) => {
@@ -79,6 +83,8 @@ const HomeScreen = ({
     const [settingsMessage, setSettingsMessage] = useState('');
     const [settingsError, setSettingsError] = useState('');
     const [settingsLocale, setSettingsLocale] = useState(currentLocale);
+    const supportSubmissionIdRef = useRef(createCommandId());
+    const deletionCommandIdRef = useRef(null);
 
     const resetSupportForm = () => {
         setSupportSubject('connection');
@@ -86,6 +92,7 @@ const HomeScreen = ({
         setSupportEmail('');
         setSupportMediaFiles([]);
         setSupportError('');
+        supportSubmissionIdRef.current = createCommandId();
     };
 
     const openSupportModal = () => {
@@ -109,6 +116,7 @@ const HomeScreen = ({
         setSettingsDeleteConfirm('');
         setSettingsMessage('');
         setSettingsError('');
+        deletionCommandIdRef.current = null;
         setSettingsOpen(true);
     };
 
@@ -171,7 +179,8 @@ const HomeScreen = ({
         setSettingsError('');
         setSettingsMessage('');
         try {
-            const response = await profile.requestDeletion(currentPassword, confirmText);
+            if (!deletionCommandIdRef.current) deletionCommandIdRef.current = createCommandId();
+            const response = await profile.requestDeletion(currentPassword, confirmText, deletionCommandIdRef.current);
             const message = response?.data?.message || t('home.deleteRequestSubmitted');
             setSettingsMessage(message);
             setSettingsDeletePassword('');
@@ -281,7 +290,8 @@ const HomeScreen = ({
             subject: supportSubject,
             description,
             email: email || null,
-            mediaFiles: supportMediaFiles
+            mediaFiles: supportMediaFiles,
+            submissionId: supportSubmissionIdRef.current
         });
 
         if (result?.ok) {
@@ -626,7 +636,28 @@ const HomeScreen = ({
                             </div>
                         </form>
 
-                        <form className="settings-section" onSubmit={handleSettingsDeleteAccount}>
+                        <section className="settings-section" aria-labelledby="settings-permissions-title">
+                            <h4 id="settings-permissions-title">{t('home.settingsPermissionsTitle')}</h4>
+                            <p className="settings-section-note">{t('home.settingsPermissionsNote')}</p>
+                            {typeof onManagePermissions === 'function' ? (
+                                <div className="settings-actions">
+                                    <button type="button" className="btn-neon" onClick={onManagePermissions}>
+                                        {t('home.settingsPermissionsAction')}
+                                    </button>
+                                </div>
+                            ) : null}
+                        </section>
+
+                        <section className="settings-section" aria-labelledby="settings-legal-title">
+                            <h4 id="settings-legal-title">{t('home.settingsLegalTitle')}</h4>
+                            <nav className="home-legal-links" aria-label={t('home.legalLinksAria')}>
+                                <a href={footer.privacyUrl} className="home-legal-link">{footer.privacyLabel}</a>
+                                <span className="home-legal-separator">&middot;</span>
+                                <a href={footer.termsUrl} className="home-legal-link">{footer.termsLabel}</a>
+                            </nav>
+                        </section>
+
+                        <form className="settings-section settings-danger-zone" onSubmit={handleSettingsDeleteAccount}>
                             <h4>{t('home.settingsDeleteTitle')}</h4>
                             <label htmlFor="settings-delete-password">{t('home.settingsCurrentPassword')}</label>
                             <input

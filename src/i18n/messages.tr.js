@@ -10,7 +10,8 @@
         send: 'Gonder',
         online: 'Online',
         success: 'Basarili',
-        error: 'Hata'
+        error: 'Hata',
+        retry: 'Tekrar Dene'
     },
     presence: {
         online: 'Cevrimici',
@@ -91,6 +92,10 @@
         settingsDeleteNote: 'Hesap silme talebi olusturulduktan sonra hesap beklemeye alinir ve oturumunuz kapatilir.',
         settingsDeleteAccount: 'Hesabimi Sil',
         settingsWorking: 'Isleniyor...',
+        settingsPermissionsTitle: 'Bildirim ve Medya Izinleri',
+        settingsPermissionsNote: 'Izin vermemek uygulamayi kilitlemez. Bildirim, kamera ve galeri izinlerini istediginiz zaman yonetebilirsiniz.',
+        settingsPermissionsAction: 'Izinleri Yonet',
+        settingsLegalTitle: 'Yasal Belgeler',
         languageTitle: 'Dil',
         languageLabel: 'Uygulama Dili',
         languageTr: 'Turkce',
@@ -253,7 +258,12 @@
         accepting: 'Isleniyor...',
         acceptedToast: 'Sozlesme kabul edildi.',
         invalidVersionInfo: 'Gecerli legal versiyon bilgisi okunamadi. Lutfen sayfayi yenileyin.',
-        acceptFailed: 'Kabul islemi basarisiz. Tekrar deneyin.'
+        acceptFailed: 'Kabul islemi basarisiz. Tekrar deneyin.',
+        statusUnavailable: 'Guncel yasal durum su an dogrulanamiyor. Oturumunuz korunuyor; baglanti geldiginde tekrar deneyin.',
+        recoveryTitle: 'Yasal Durum Dogrulaniyor',
+        recoveryDescription: 'Guncel sozlesme durumu dogrulanmadan korunan ozellikler acilmaz. Oturumunuz silinmedi.',
+        sessionRecoveryUnavailable: 'Oturum su an dogrulanamiyor. Oturumunuz korunuyor; yeniden deneyebilir veya cikis yapabilirsiniz.',
+        releaseIdentity: 'Yayin: {release}'
     },
     app: {
         notificationTag: 'Bildirim',
@@ -288,6 +298,7 @@
         matchPeerLeft: 'Karsi taraf eslesmeden ayrildi. Yeni eslesme araniyor...',
         photoReceived: 'Fotograf gonderdi',
         reportDelivered: 'Raporunuz iletildi.',
+        supportDuplicate: 'Bu destek kaydi daha once alindi; ikinci bir kayit olusturulmadi.',
         friendRequestSent: 'Arkadaslik istegi gonderildi.',
         friendRequestIncomingTitle: 'Yeni arkadaslik istegi',
         friendRequestIncomingBody: '{name} size arkadaslik istegi gonderdi.',
@@ -323,6 +334,8 @@
         SESSION_REVOKED: 'Oturumunuz sonlandirildi. Lutfen yeniden giris yapin.',
         AUTH_ALREADY_COMPLETED: 'Bu baglantida zaten oturum acildi.',
         LEGAL_REACCEPT_REQUIRED: 'Guncel sozlesmeleri kabul etmeniz gerekiyor.',
+        LEGAL_STATUS_UNAVAILABLE: 'Guncel yasal durum su an dogrulanamiyor.',
+        LEGAL_VERSION_MISMATCH: 'Sozlesmeler siz incelerken guncellendi. Yeni surumu tekrar inceleyin.',
         INVALID_TARGET_ID: 'Gecersiz hedef kullanici kimligi.',
         SCHEMA_NOT_READY: 'Sunucu semasi hazir degil. Lutfen tekrar deneyin.',
         BLOCK_OPERATION_FAILED: 'Engelleme islemi su anda tamamlanamadi.',

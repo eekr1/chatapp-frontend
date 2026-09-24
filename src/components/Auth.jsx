@@ -17,8 +17,11 @@ const DEFAULT_LEGAL_VERSIONS = Object.freeze({
 });
 
 const isExternalUrl = (value) => /^https:\/\//i.test(String(value || '').trim());
+const createCommandId = () => (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : `legal-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 
-export default function Auth({ onLogin, legalFooter, legalVersions }) {
+export default function Auth({ onLogin, legalFooter, legalVersions, legalReleaseId, legalAvailable = false }) {
     const { t, locale } = useI18n();
     const [isLogin, setIsLogin] = useState(true);
     const [username, setUsername] = useState('');
@@ -67,11 +70,17 @@ export default function Auth({ onLogin, legalFooter, legalVersions }) {
                 setError(t('auth.legalRequired'));
                 return;
             }
+            if (!legalAvailable || !legalReleaseId) {
+                setError(t('legal.statusUnavailable'));
+                return;
+            }
 
             await auth.register(username, password, {
                 terms_accepted: true,
                 terms_version: versions.terms,
-                privacy_version: versions.privacy
+                privacy_version: versions.privacy,
+                expected_release_id: legalReleaseId,
+                command_id: createCommandId()
             }, locale);
 
             const response = await auth.login(username, password, localStorage.getItem('anon_device_id') || 'unknown');

@@ -1705,6 +1705,29 @@ h4 {
   font-size: 0.78rem;
 }
 
+.legal-reaccept-versions small,
+.legal-release-id {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: .75rem;
+  overflow-wrap: anywhere;
+}
+
+.settings-section-note {
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.settings-danger-zone {
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.settings-danger-zone h4 {
+  color: var(--danger);
+}
+
 .legal-reaccept-actions {
   display: flex;
   justify-content: flex-end;

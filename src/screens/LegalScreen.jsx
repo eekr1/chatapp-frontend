@@ -22,7 +22,7 @@ const pickLocalizedDoc = (docByLang = {}, lang = 'en') => {
     return docByLang[lang] || docByLang.en || docByLang.tr || {};
 };
 
-const LegalScreen = ({ kind = 'privacy', legalContent = null, loading = false }) => {
+const LegalScreen = ({ kind = 'privacy', legalContent = null, loading = false, unavailable = false }) => {
     const { locale, t } = useI18n();
     const resolvedKind = normalizeKind(kind);
     const queryLang = readQueryLang();
@@ -54,9 +54,14 @@ const LegalScreen = ({ kind = 'privacy', legalContent = null, loading = false })
 
                 {loading ? (
                     <p className="legal-screen-loading">{t('common.loading')}</p>
+                ) : unavailable ? (
+                    <p className="legal-screen-loading" role="alert">{t('legal.statusUnavailable')}</p>
                 ) : (
                     <article className="legal-screen-content">{content}</article>
                 )}
+                {!loading && !unavailable && legalContent?.release_id ? (
+                    <p className="legal-release-id">{t('legal.releaseIdentity', { release: legalContent.release_id })}</p>
+                ) : null}
             </div>
         </div>
     );

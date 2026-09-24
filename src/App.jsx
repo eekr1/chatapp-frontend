@@ -354,6 +354,10 @@ const normalizeLegalContent = (value) => {
   };
 
   const normalized = {
+    release_id: typeof source.release_id === 'string' ? source.release_id : null,
+    revision: typeof source.revision === 'string' ? source.revision : null,
+    published_at: source.published_at || source.updatedAt || null,
+    format: source.format === 'plain_text' ? 'plain_text' : 'plain_text',
     footer: {
       urls: {
         privacy: typeof footerSource?.urls?.privacy === 'string' && footerSource.urls.privacy.trim()
@@ -452,13 +456,20 @@ function App() {
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const [legalContent, setLegalContent] = useState(() => cloneLegalContent());
   const [legalLoaded, setLegalLoaded] = useState(false);
+  const [legalLoadError, setLegalLoadError] = useState(false);
   const [legalReaccept, setLegalReaccept] = useState({
     open: false,
     loading: false,
+    status: 'unknown',
     error: '',
     required: null,
-    accepted: null
+    accepted: null,
+    releaseId: null,
+    revision: null,
+    reason: null
   });
+  const [authChecking, setAuthChecking] = useState(() => Boolean(localStorage.getItem('session_token')));
+  const [authRecoveryError, setAuthRecoveryError] = useState(false);
   const [showPermissionOnboarding, setShowPermissionOnboarding] = useState(false);
   const [permissionsRequesting, setPermissionsRequesting] = useState(false);
   const [nativePermissionsReady, setNativePermissionsReady] = useState(() => !IS_NATIVE);
@@ -501,6 +512,7 @@ function App() {
   const backPressAtRef = useRef(0);
   const friendHistoryRequestRef = useRef(0);
   const leaveIntentRef = useRef(false);
+  const legalAcceptCommandRef = useRef(null);
 
   const IMAGE_FETCH_TIMEOUT_MS = 12000;
   const [imageViewer, setImageViewer] = useState(() => ({ ...INITIAL_IMAGE_VIEWER }));
@@ -554,8 +566,10 @@ function App() {
         const response = await legalApi.getPublic();
         if (canceled) return;
         setLegalContent(normalizeLegalContent(response?.data));
+        setLegalLoadError(false);
       } catch (e) {
         if (IS_DEV) console.warn('Legal content load failed:', e?.message || e);
+        if (!canceled) setLegalLoadError(true);
       } finally {
         if (!canceled) setLegalLoaded(true);
       }
@@ -825,61 +839,95 @@ function App() {
   }, [appName, dismissFriendRequestPrompt, loadFriends, showToast, t]);
 
   const refreshLegalStatus = useCallback(async () => {
+    setLegalReaccept((prev) => ({ ...prev, status: 'checking', error: '' }));
     try {
       const response = await profile.getLegalStatus();
       const required = response?.data?.required_versions || null;
       const accepted = response?.data?.accepted_versions || null;
       const requires = Boolean(response?.data?.requires_reaccept);
+      const releaseId = response?.data?.release_id || null;
       setLegalReaccept((prev) => ({
         ...prev,
         open: requires,
+        loading: false,
+        status: requires ? 'required' : 'accepted',
         required,
         accepted,
+        releaseId,
+        revision: response?.data?.revision || null,
+        reason: response?.data?.reason || null,
         error: ''
       }));
+      legalAcceptCommandRef.current = null;
       return requires;
     } catch (error) {
       console.error('Legal status check failed:', error);
-      return false;
+      setLegalReaccept((prev) => ({
+        ...prev,
+        open: true,
+        loading: false,
+        status: 'unavailable',
+        error: getLocalizedApiError(t, error, 'legal.statusUnavailable')
+      }));
+      return null;
     }
-  }, []);
+  }, [t]);
 
   const handleAcceptLatestLegal = useCallback(async () => {
     const required = legalReaccept?.required || {};
     const termsVersion = String(required.terms || '').trim();
     const privacyVersion = String(required.privacy || '').trim();
-    if (!termsVersion || !privacyVersion) {
+    const releaseId = String(legalReaccept?.releaseId || '').trim();
+    if (!termsVersion || !privacyVersion || !releaseId) {
       setLegalReaccept((prev) => ({
         ...prev,
-        error: 'Gecerli legal versiyon bilgisi okunamadi. Lutfen sayfayi yenileyin.'
+        error: t('legal.statusUnavailable')
       }));
       return;
     }
 
     setLegalReaccept((prev) => ({ ...prev, loading: true, error: '' }));
     try {
-      await profile.acceptLegalVersions(termsVersion, privacyVersion);
+      const commandKey = `${releaseId}:${termsVersion}:${privacyVersion}`;
+      if (legalAcceptCommandRef.current?.key !== commandKey) {
+        legalAcceptCommandRef.current = { key: commandKey, id: randomId() };
+      }
+      const response = await profile.acceptLegalVersions({
+        termsVersion,
+        privacyVersion,
+        expectedReleaseId: releaseId,
+        commandId: legalAcceptCommandRef.current.id,
+        locale: activeLocale
+      });
       setLegalReaccept((prev) => ({
         ...prev,
-        open: false,
         loading: false,
-        error: '',
-        accepted: {
-          terms: termsVersion,
-          privacy: privacyVersion,
-          accepted_at: new Date().toISOString()
-        }
+        accepted: response?.data?.accepted_versions || prev.accepted,
+        releaseId: response?.data?.release_id || prev.releaseId,
+        revision: response?.data?.revision || prev.revision
       }));
-      loadFriends();
-      showToast(appName, t('legal.acceptedToast'), 3500);
+      const stillRequires = await refreshLegalStatus();
+      if (stillRequires === false) {
+        shouldReconnectRef.current = true;
+        connectWsFnRef.current();
+        loadFriends();
+        showToast(appName, t('legal.acceptedToast'), 3500);
+      }
     } catch (error) {
+      const isConflict = error?.response?.status === 409 && error?.response?.data?.code === 'LEGAL_VERSION_MISMATCH';
+      if (isConflict) legalAcceptCommandRef.current = null;
       setLegalReaccept((prev) => ({
         ...prev,
         loading: false,
+        open: true,
+        status: isConflict ? 'conflict' : 'required',
+        required: error?.response?.data?.required_versions || prev.required,
+        releaseId: error?.response?.data?.release_id || prev.releaseId,
+        revision: error?.response?.data?.revision || prev.revision,
         error: getLocalizedApiError(t, error, 'legal.acceptFailed')
       }));
     }
-  }, [appName, legalReaccept?.required, loadFriends, showToast, t]);
+  }, [activeLocale, appName, legalReaccept?.releaseId, legalReaccept?.required, loadFriends, refreshLegalStatus, showToast, t]);
 
   const applyLocaleFromUser = useCallback(async (userPayload, { persistRemoteIfMissing = false } = {}) => {
     const userLocale = toSupportedLocale(userPayload?.locale, null);
@@ -904,12 +952,16 @@ function App() {
       locale: toSupportedLocale(nextUser?.locale, resolvedLocale)
     });
     const requiresReaccept = await refreshLegalStatus();
-    if (!requiresReaccept) loadFriends();
+    if (requiresReaccept === false) loadFriends();
   }, [applyLocaleFromUser, loadFriends, refreshLegalStatus]);
 
   const checkAuth = useCallback(async () => {
     const token = localStorage.getItem('session_token');
-    if (!token) return;
+    if (!token) {
+      setAuthChecking(false);
+      setAuthRecoveryError(false);
+      return;
+    }
 
     try {
       const res = await profile.getMe();
@@ -919,10 +971,19 @@ function App() {
         locale: toSupportedLocale(res?.data?.user?.locale, resolvedLocale)
       });
       const requiresReaccept = await refreshLegalStatus();
-      if (!requiresReaccept) loadFriends();
-    } catch {
-      localStorage.removeItem('session_token');
-      storeAuthNotice(sessionStorage, 'sessionEnded');
+      if (requiresReaccept === false) loadFriends();
+      setAuthRecoveryError(false);
+    } catch (error) {
+      const statusCode = Number(error?.response?.status);
+      if (statusCode === 401) {
+        localStorage.removeItem('session_token');
+        storeAuthNotice(sessionStorage, 'sessionEnded');
+        setAuthRecoveryError(false);
+      } else {
+        setAuthRecoveryError(true);
+      }
+    } finally {
+      setAuthChecking(false);
     }
   }, [applyLocaleFromUser, loadFriends, refreshLegalStatus]);
 
@@ -1623,6 +1684,27 @@ function App() {
               storeAuthNotice(sessionStorage, 'sessionEnded');
               setUser(null);
               setScreen('splash');
+            } else if (errorCode === 'LEGAL_REACCEPT_REQUIRED') {
+              shouldReconnectRef.current = false;
+              setLegalReaccept((prev) => ({
+                ...prev,
+                open: true,
+                status: 'required',
+                required: data?.metadata?.required_versions || prev.required,
+                accepted: data?.metadata?.accepted_versions || prev.accepted,
+                releaseId: data?.metadata?.release_id || prev.releaseId,
+                revision: data?.metadata?.revision || prev.revision,
+                reason: data?.metadata?.reason || prev.reason,
+                error: ''
+              }));
+            } else if (errorCode === 'LEGAL_STATUS_UNAVAILABLE') {
+              shouldReconnectRef.current = false;
+              setLegalReaccept((prev) => ({
+                ...prev,
+                open: true,
+                status: 'unavailable',
+                error: t('legal.statusUnavailable')
+              }));
             } else {
               const localized = t(`errors.${errorCode}`, {}, null);
               showToast(appName, localized && localized !== `errors.${errorCode}` ? localized : t('errors.SERVER_ERROR'), 5000);
@@ -2053,10 +2135,17 @@ function App() {
     setLegalReaccept({
       open: false,
       loading: false,
+      status: 'unknown',
       error: '',
       required: null,
-      accepted: null
+      accepted: null,
+      releaseId: null,
+      revision: null,
+      reason: null
     });
+    legalAcceptCommandRef.current = null;
+    setAuthChecking(false);
+    setAuthRecoveryError(false);
 
     if (imageFetchTimeoutRef.current) {
       clearTimeout(imageFetchTimeoutRef.current);
@@ -2489,7 +2578,7 @@ function App() {
     ws.current.send(JSON.stringify(payload));
   };
 
-  const handleSupportReport = async ({ subject, description, email, mediaFiles = [] }) => {
+  const handleSupportReport = async ({ subject, description, email, mediaFiles = [], submissionId }) => {
     const normalizedSubject = normalizeSupportSubject(subject);
     if (!normalizedSubject) {
       const message = t('app.invalidSubject');
@@ -2509,7 +2598,8 @@ function App() {
       deviceModel: resolveDeviceModel(),
       timestamp: new Date().toISOString(),
       networkType: resolveNetworkType(),
-      lastErrorCode: getLastErrorCode() || null
+      lastErrorCode: getLastErrorCode() || null,
+      submissionId
     };
     const hasMedia = validMediaFiles.length > 0;
     const payload = hasMedia
@@ -2518,6 +2608,7 @@ function App() {
         formData.append('subject', normalizedSubject);
         formData.append('description', descriptionText);
         if (emailText) formData.append('email', emailText);
+        formData.append('submissionId', submissionId);
         formData.append('metadata', JSON.stringify(metadata));
         validMediaFiles.forEach((file) => {
           formData.append('media', file, file.name || 'media');
@@ -2534,12 +2625,19 @@ function App() {
     setSupportSubmitting(true);
     try {
       const response = await supportApi.report(payload);
-      if (!response?.data?.delivered) {
+      if (response?.data?.duplicate) {
+        showToast(appName, t('app.supportDuplicate'), 6500);
+      } else if (!response?.data?.delivered) {
         showToast(appName, t('app.supportQueued'), 6500);
       } else {
         showToast(appName, t('app.supportReceived'), 6500);
       }
-      return { ok: true };
+      return {
+        ok: true,
+        duplicate: Boolean(response?.data?.duplicate),
+        recordStatus: response?.data?.recordStatus || 'received',
+        deliveryStatus: response?.data?.deliveryStatus || 'unknown'
+      };
     } catch (error) {
       const message = getLocalizedApiError(t, error, 'app.supportFailed');
       showToast(appName, message, 6500);
@@ -2808,8 +2906,12 @@ function App() {
   const legalReacceptModal = user && legalReaccept.open && (
     <div className="legal-reaccept-overlay">
       <div className="legal-reaccept-card glass-card" role="dialog" aria-modal="true" aria-labelledby="legal-reaccept-title">
-        <h3 id="legal-reaccept-title" className="legal-reaccept-title">{t('legal.updatedContracts')}</h3>
-        <p className="legal-reaccept-desc">{t('legal.reacceptDescription')}</p>
+        <h3 id="legal-reaccept-title" className="legal-reaccept-title">
+          {legalReaccept.status === 'unavailable' ? t('legal.recoveryTitle') : t('legal.updatedContracts')}
+        </h3>
+        <p className="legal-reaccept-desc">
+          {legalReaccept.status === 'unavailable' ? t('legal.recoveryDescription') : t('legal.reacceptDescription')}
+        </p>
         <div className="legal-reaccept-links">
           <a href={localizedLegalFooter.privacyUrl || '/privacy-policy'} target="_blank" rel="noopener noreferrer">
             {localizedLegalFooter.privacyLabel}
@@ -2824,15 +2926,39 @@ function App() {
             terms: legalReaccept?.required?.terms || '-',
             privacy: legalReaccept?.required?.privacy || '-'
           })}
+          {legalReaccept.releaseId ? <small>{t('legal.releaseIdentity', { release: legalReaccept.releaseId })}</small> : null}
         </div>
         {legalReaccept.error ? <div className="support-error">{legalReaccept.error}</div> : null}
         <div className="legal-reaccept-actions">
           <button type="button" className="btn-neon" onClick={handleLogout} disabled={legalReaccept.loading}>
             {t('legal.logout')}
           </button>
-          <button type="button" className="btn-solid-purple" onClick={handleAcceptLatestLegal} disabled={legalReaccept.loading}>
-            {legalReaccept.loading ? t('legal.accepting') : t('legal.accept')}
-          </button>
+          {legalReaccept.status === 'unavailable' ? (
+            <button
+              type="button"
+              className="btn-solid-purple"
+              onClick={async () => {
+                const requires = await refreshLegalStatus();
+                if (requires === false) {
+                  shouldReconnectRef.current = true;
+                  connectWsFnRef.current();
+                  loadFriends();
+                }
+              }}
+              disabled={legalReaccept.loading}
+            >
+              {t('common.retry')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-solid-purple"
+              onClick={handleAcceptLatestLegal}
+              disabled={legalReaccept.loading || !legalReaccept.releaseId || legalLoadError}
+            >
+              {legalReaccept.loading ? t('legal.accepting') : t('legal.accept')}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -2854,16 +2980,35 @@ function App() {
         kind={legalKind}
         legalContent={legalContent}
         loading={!legalLoaded}
+        unavailable={legalLoadError}
       />
     );
   }
 
   if (!user) {
+    if (authChecking || authRecoveryError) {
+      return withToasts(
+        <main className="login-container center-flex auth-page">
+          <section className="glass-card auth-card" role="status">
+            <h1 className="brand-lockup-text">TalkX</h1>
+            <p>{authChecking ? t('common.loading') : t('legal.sessionRecoveryUnavailable')}</p>
+            {authRecoveryError ? (
+              <div className="legal-reaccept-actions">
+                <button type="button" className="btn-neon" onClick={() => handleLogout()}>{t('legal.logout')}</button>
+                <button type="button" className="btn-solid-purple" onClick={() => { setAuthChecking(true); checkAuth(); }}>{t('common.retry')}</button>
+              </div>
+            ) : null}
+          </section>
+        </main>
+      );
+    }
     return withToasts(
       <Auth
         onLogin={handleAuthLogin}
         legalFooter={localizedLegalFooter}
         legalVersions={legalContent.versions}
+        legalReleaseId={legalContent.release_id}
+        legalAvailable={legalLoaded && !legalLoadError}
       />
     );
   }
@@ -2885,6 +3030,7 @@ function App() {
         onSupportSubmit={handleSupportReport}
         supportSubmitting={supportSubmitting}
         legalFooter={localizedLegalFooter}
+        onManagePermissions={IS_NATIVE ? () => setShowPermissionOnboarding(true) : null}
         currentLocale={activeLocale}
         onLocaleChange={handleLocaleChange}
         matchScope={matchScope}

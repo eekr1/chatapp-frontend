@@ -10,7 +10,8 @@
         send: 'Send',
         online: 'Online',
         success: 'Success',
-        error: 'Error'
+        error: 'Error',
+        retry: 'Retry'
     },
     presence: {
         online: 'Online',
@@ -87,10 +88,14 @@
         settingsUpdating: 'Updating...',
         settingsDeleteTitle: 'Delete Account',
         settingsConfirmText: 'Confirmation Text',
-        settingsConfirmPlaceholder: 'DELETE MY ACCOUNT',
+        settingsConfirmPlaceholder: 'HESABIMI SIL',
         settingsDeleteNote: 'After creating a deletion request, your account is set to pending and your session is terminated.',
         settingsDeleteAccount: 'Delete My Account',
         settingsWorking: 'Processing...',
+        settingsPermissionsTitle: 'Notification and Media Permissions',
+        settingsPermissionsNote: 'Denying permissions does not lock the app. You can manage notification, camera, and gallery access at any time.',
+        settingsPermissionsAction: 'Manage Permissions',
+        settingsLegalTitle: 'Legal Documents',
         languageTitle: 'Language',
         languageLabel: 'App Language',
         languageTr: 'Turkish',
@@ -253,7 +258,12 @@
         accepting: 'Processing...',
         acceptedToast: 'Contract accepted.',
         invalidVersionInfo: 'Could not read required legal versions. Please refresh.',
-        acceptFailed: 'Acceptance failed. Please try again.'
+        acceptFailed: 'Acceptance failed. Please try again.',
+        statusUnavailable: 'Your current legal status cannot be verified right now. Your session is preserved; retry when connected.',
+        recoveryTitle: 'Verifying Legal Status',
+        recoveryDescription: 'Protected features stay closed until the current legal status is verified. Your session was not deleted.',
+        sessionRecoveryUnavailable: 'Your session cannot be verified right now. It is preserved; retry or sign out.',
+        releaseIdentity: 'Release: {release}'
     },
     app: {
         notificationTag: 'Notification',
@@ -288,6 +298,7 @@
         matchPeerLeft: 'The other user left the match. Searching again...',
         photoReceived: 'Sent a photo',
         reportDelivered: 'Your report has been sent.',
+        supportDuplicate: 'This support request was already received; no duplicate was created.',
         friendRequestSent: 'Friend request sent.',
         friendRequestIncomingTitle: 'New friend request',
         friendRequestIncomingBody: '{name} sent you a friend request.',
@@ -323,6 +334,8 @@
         SESSION_REVOKED: 'Your session ended. Please sign in again.',
         AUTH_ALREADY_COMPLETED: 'This connection is already signed in.',
         LEGAL_REACCEPT_REQUIRED: 'You must accept updated legal documents.',
+        LEGAL_STATUS_UNAVAILABLE: 'Your current legal status cannot be verified right now.',
+        LEGAL_VERSION_MISMATCH: 'The documents changed while you were reviewing them. Review the new release again.',
         INVALID_TARGET_ID: 'Invalid target user id.',
         SCHEMA_NOT_READY: 'Server schema is not ready. Please try again.',
         BLOCK_OPERATION_FAILED: 'Block operation cannot be completed right now.',

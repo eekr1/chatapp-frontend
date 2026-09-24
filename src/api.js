@@ -109,14 +109,22 @@ export const auth = {
 export const profile = {
     getMe: () => api.get('/api/me'),
     getLegalStatus: () => api.get('/api/me/legal-status'),
-    acceptLegalVersions: (terms_version, privacy_version) => api.post('/api/me/legal-accept', { terms_version, privacy_version }),
+    acceptLegalVersions: ({ termsVersion, privacyVersion, expectedReleaseId, commandId, locale }) => api.post('/api/me/legal-accept', {
+        terms_version: termsVersion,
+        privacy_version: privacyVersion,
+        expected_release_id: expectedReleaseId,
+        command_id: commandId,
+        locale
+    }),
     updateMe: (data) => api.put('/api/me/profile', data),
     changePassword: async (current_password, new_password) => {
         const response = await api.put('/api/me/password', { current_password, new_password });
         localStorage.removeItem('session_token');
         return response;
     },
-    requestDeletion: (current_password, confirm_text) => api.post('/api/me/delete-request', { current_password, confirm_text })
+    requestDeletion: (current_password, confirm_text, commandId) => api.post('/api/me/delete-request',
+        { current_password, confirm_text },
+        { headers: { 'Idempotency-Key': commandId } })
 };
 
 export const friends = {
