@@ -72,6 +72,7 @@ import {
   setupViewportInsets,
   configureNativeSystemUi,
   addNativeBackButtonListener,
+  addNativeAppStateListener,
   exitNativeApp,
   initNativePush,
   initNativeLocalNotifications,
@@ -172,13 +173,10 @@ const resolveWsUrl = ({ isNative, isDev }) => {
     }
   }
 
-  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-  const isLikelyEmulator = /sdk_gphone|sdk_phone|emulator|Android SDK built for x86/i.test(ua);
-  if (isNative && isDev && isLikelyEmulator) return 'ws://10.0.2.2:3000';
   if (isNative && !isDev) return '';
 
   const host = window.location.host;
-  if (host.includes('localhost')) return 'ws://localhost:3000';
+  if (import.meta.env.DEV && host.includes('localhost')) return 'ws://localhost:3000';
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${host}`;
 };
@@ -1973,10 +1971,18 @@ function App() {
       }
       connectWsFnRef.current();
     };
+    const onOffline = () => {
+      setWsStatus('offline');
+      setLocalSearchPhase('offline');
+    };
 
     window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
-  }, [user]);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, [setLocalSearchPhase, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -2010,6 +2016,7 @@ function App() {
 
   useEffect(() => {
     if (!user) return;
+    let disposeNativeState = () => { };
 
     const onForeground = () => {
       if (document.visibilityState && document.visibilityState !== 'visible') return;
@@ -2018,6 +2025,14 @@ function App() {
         registerPushToken(nativePushTokenRef.current, { force: true });
       }
     };
+
+    if (IS_NATIVE) {
+      (async () => {
+        disposeNativeState = await addNativeAppStateListener(({ isActive }) => {
+          if (isActive) onForeground();
+        });
+      })();
+    }
 
     const pushRefreshTimer = window.setInterval(() => {
       if (nativePushTokenRef.current) {
@@ -2034,6 +2049,7 @@ function App() {
       document.removeEventListener('visibilitychange', onForeground);
       document.removeEventListener('resume', onForeground);
       window.removeEventListener('focus', onForeground);
+      disposeNativeState();
     };
   }, [user, registerPushToken]);
 

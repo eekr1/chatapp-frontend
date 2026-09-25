@@ -12,10 +12,7 @@ const isNative = typeof window !== 'undefined' && (
     Boolean(window.Capacitor?.isNative)
 );
 const envApiUrl = String(import.meta.env.VITE_API_URL || '').trim();
-const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-const isLikelyAndroidEmulator = /sdk_gphone|sdk_phone|emulator|Android SDK built for x86/i.test(ua);
-const useEmulatorFallback = Boolean(isNative && import.meta.env.DEV && isLikelyAndroidEmulator);
-const baseURL = envApiUrl || (useEmulatorFallback ? 'http://10.0.2.2:3000' : '');
+const baseURL = envApiUrl;
 
 if (import.meta.env.DEV && isNative && !baseURL) {
     console.warn('VITE_API_URL is empty on native app; backend API requests may fail.');

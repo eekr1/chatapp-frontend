@@ -15,7 +15,8 @@ const allTests = [
   'wave10-message-outbox.test.js',
   'wave11-media-trust.test.js',
   'wave12-legal-account.test.js',
-  'wave13-locale-notification.test.js'
+  'wave13-locale-notification.test.js',
+  'wave18-mobile-release.test.js'
 ];
 const criticalTests = [
   'wave03-foundation.test.js',
@@ -24,7 +25,8 @@ const criticalTests = [
   'wave08-match-scope.test.js',
   'wave09-pending-match.test.js',
   'wave10-message-outbox.test.js',
-  'wave12-legal-account.test.js'
+  'wave12-legal-account.test.js',
+  'wave18-mobile-release.test.js'
 ];
 const blockedExternalVariables = [
   'DATABASE_URL',

@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,11 +14,18 @@
     "quality:audit": "npm audit --omit=dev --audit-level=high",
     "quality:all": "npm run quality:policy && npm run quality:test && npm run quality:critical && npm run lint && npm run build && npm run quality:audit",
     "preview": "vite preview",
+    "mobile:version:check": "node scripts/mobile-release.mjs version",
+    "mobile:build:web-release": "npm run build",
     "mobile:sync:android": "npx cap sync android",
-    "mobile:bump:android": "powershell -ExecutionPolicy Bypass -File ./scripts/bump-android-version.ps1",
-    "mobile:prepare:android": "npm run build && npm run mobile:sync:android",
-    "mobile:verify:android-assets": "powershell -ExecutionPolicy Bypass -File ./scripts/check-android-web-assets.ps1",
-    "mobile:release:android": "npm run mobile:prepare:android && npm run mobile:verify:android-assets && npm run mobile:bump:android && cd android && gradlew.bat bundleRelease",
+    "mobile:sync:android-clean": "node scripts/mobile-release.mjs sync",
+    "mobile:prepare:android": "npm run mobile:version:check && npm run mobile:build:web-release && npm run mobile:sync:android-clean",
+    "mobile:verify:android-assets": "node scripts/mobile-release.mjs assets",
+    "mobile:verify:manifest": "node scripts/mobile-release.mjs manifest",
+    "mobile:verify:config": "node scripts/mobile-release.mjs config",
+    "mobile:bundle:release": "node scripts/mobile-release.mjs bundle",
+    "mobile:verify:signature": "node scripts/mobile-release.mjs signature",
+    "mobile:release:package": "node scripts/mobile-release.mjs package",
+    "mobile:release:android": "npm run mobile:release:package",
     "postinstall": "patch-package"
   },
   "dependencies": {

@@ -179,6 +179,32 @@ export const addNativeBackButtonListener = async (handler) => {
     }
 };
 
+export const addNativeAppStateListener = async (handler) => {
+    if (!isNativePlatform()) return () => { };
+    const { App } = getPlugins();
+    if (!App?.addListener || typeof handler !== 'function') return () => { };
+
+    try {
+        const listener = await App.addListener('appStateChange', (state) => {
+            try {
+                handler({ isActive: Boolean(state?.isActive) });
+            } catch (e) {
+                console.warn('App state handler failed:', e?.message || e);
+            }
+        });
+        return () => {
+            try {
+                listener?.remove?.();
+            } catch (e) {
+                console.warn('App state listener remove failed:', e?.message || e);
+            }
+        };
+    } catch (e) {
+        console.warn('App state listener setup failed:', e?.message || e);
+        return () => { };
+    }
+};
+
 export const exitNativeApp = async () => {
     if (!isNativePlatform()) return false;
     const { App } = getPlugins();
