@@ -50,6 +50,11 @@ import {
 } from './state/messageOutbox';
 import { chooseNextPrompt, getPrompt } from './match/promptCatalog';
 import {
+  normalizeNotificationPayload,
+  notificationDeliveryKey,
+  resolveNotificationRoute
+} from './notifications/notificationRouting';
+import {
   applyPresenceUpdate,
   parseRecoverySnapshot,
   reconcileUnread,
@@ -509,6 +514,7 @@ function App() {
   const outboxReadyRef = useRef(false);
   const flushOutboxFnRef = useRef(() => { });
   const connectWsFnRef = useRef(() => { });
+  const openFriendChatFnRef = useRef(async () => { });
   const backPressAtRef = useRef(0);
   const friendHistoryRequestRef = useRef(0);
   const leaveIntentRef = useRef(false);
@@ -773,6 +779,7 @@ function App() {
         if (f.unread_count > 0) initialUnread[f.user_id] = f.unread_count;
       });
       setUnreadCounts(initialUnread);
+      return loadedFriends;
     } catch (e) {
       if (e?.response?.status === 428 && e?.response?.data?.code === 'LEGAL_REACCEPT_REQUIRED') {
         setLegalReaccept((prev) => ({
@@ -784,6 +791,7 @@ function App() {
         }));
       }
       console.error('Friends load error:', e);
+      return [];
     }
   }, []);
 
@@ -1057,7 +1065,7 @@ function App() {
     }
   }, []);
 
-  const registerPushToken = useCallback(async (tokenValue, { force = false } = {}) => {
+  const registerPushToken = useCallback(async (tokenValue, { force = false, locale = activeLocale } = {}) => {
     if (!user || !tokenValue) return false;
     nativePushTokenRef.current = tokenValue;
     if (!force && pushTokenRef.current === tokenValue) return true;
@@ -1071,7 +1079,8 @@ function App() {
         await pushApi.register({
           token: tokenValue,
           platform: 'android',
-          deviceId: DEVICE_ID
+          deviceId: DEVICE_ID,
+          locale
         });
         pushTokenRef.current = tokenValue;
         pushRetryAttemptRef.current = 0;
@@ -1123,21 +1132,31 @@ function App() {
       pushRetryAttemptRef.current += 1;
     }
     return false;
-  }, [appName, clearPushRetry, showToast, user]);
+  }, [activeLocale, appName, clearPushRetry, showToast, user]);
 
   const handlePushPayload = useCallback(async (payload = {}, fromPushEvent = false) => {
-    const data = payload.data || {};
-    const title = payload.title || payload.notification?.title || data.title || appName;
-    const body = payload.body || payload.notification?.body || data.body || '';
-    const type = data.type || payload.type;
-    const deliveryId = data.deliveryId || payload.deliveryId || payload.notification?.data?.deliveryId;
-    if (!shouldProcessDelivery(deliveryId)) return;
+    const normalizedPayload = normalizeNotificationPayload(payload);
+    const { data, type, deliveryId } = normalizedPayload;
+    const title = normalizedPayload.title || appName;
+    const body = normalizedPayload.body;
+    const phase = fromPushEvent ? 'received' : 'action';
+    if (!shouldProcessDelivery(notificationDeliveryKey(normalizedPayload, phase))) return;
     const allowLocalNotification = fromPushEvent && !isAppForeground();
     const channelId = data.channelId || (type === 'admin_notice' ? CHANNEL_IDS.admin : CHANNEL_IDS.messages);
+    const route = resolveNotificationRoute(normalizedPayload);
+
+    if (!fromPushEvent && route?.kind === 'friend_chat') {
+      const loadedFriends = await loadFriends();
+      const friend = loadedFriends.find((item) => String(item.user_id) === route.friendId);
+      if (friend) await openFriendChatFnRef.current(friend);
+      else setScreen('friends');
+      return;
+    }
 
     if (type === 'admin_notice') {
       const normalized = normalizeAdminNotice({ title, body, data });
       const durationMs = Number(data.durationMs || 10000);
+      if (!fromPushEvent && route?.kind === 'home') setScreen('home');
       showToast(normalized.title, normalized.body, durationMs);
       if (allowLocalNotification) {
         await showLocalNotification({
@@ -1903,11 +1922,10 @@ function App() {
       dispose = await initNativeLocalNotifications({
         onLocalAction: (event) => {
           const extra = event?.notification?.extra || event?.notification?.data || {};
-          const type = extra?.type;
-          if (type === 'friend_request_incoming') {
-            loadFriends();
-            setScreen('friends');
-          }
+          handlePushPayload({
+            ...(event?.notification || {}),
+            data: extra
+          }, false);
         }
       });
     })();
@@ -1919,7 +1937,7 @@ function App() {
         if (IS_DEV) console.warn('Local notification dispose failed:', e?.message || e);
       }
     };
-  }, [loadFriends, user]);
+  }, [handlePushPayload, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -2342,6 +2360,7 @@ function App() {
 
     setScreen('chat');
   };
+  openFriendChatFnRef.current = handleStartFriendChat;
 
   const handleAcceptRequest = async (id) => {
     await friends.accept(id);
@@ -2657,12 +2676,15 @@ function App() {
     try {
       await profile.updateMe({ locale: normalized });
       setUser((prev) => (prev ? { ...prev, locale: normalized } : prev));
+      if (nativePushTokenRef.current) {
+        await registerPushToken(nativePushTokenRef.current, { force: true, locale: normalized });
+      }
       return normalized;
     } catch (error) {
       setLocale(previousLocale, { persist: true });
       throw error;
     }
-  }, [activeLocale, setLocale, user?.id]);
+  }, [activeLocale, registerPushToken, setLocale, user?.id]);
 
   const closeImageViewer = useCallback(() => {
     if (imageFetchTimeoutRef.current) {
