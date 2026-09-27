@@ -8,6 +8,28 @@ import { getOfferTiming } from '../state/pendingMatch';
 
 const MOODS = ['random', 'fun', 'casual', 'deep'];
 
+const PromptIcon = () => (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M20 14a4 4 0 0 1-4 4H9l-5 3 1.6-4.4A7 7 0 0 1 4 12V9a5 5 0 0 1 5-5h7a4 4 0 0 1 4 4Z" />
+        <path d="M9 11h.01M13 11h.01M17 11h.01" />
+    </svg>
+);
+
+const RefreshIcon = () => (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M20 7v5h-5" />
+        <path d="M4 17v-5h5" />
+        <path d="M6.1 9A7 7 0 0 1 18 6l2 1M18 15a7 7 0 0 1-12 3l-2-1" />
+    </svg>
+);
+
+const CancelIcon = () => (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="m9 9 6 6m0-6-6 6" />
+    </svg>
+);
+
 const MatchScreen = ({
     status,
     offer,
@@ -102,11 +124,22 @@ const MatchScreen = ({
                             ))}
                         </div>
                         <div className="match-journey__prompt">
-                            <div>
+                            <span className="match-journey__prompt-icon">
+                                <PromptIcon />
+                            </span>
+                            <div className="match-journey__prompt-copy">
                                 <span>{t('match.promptLabel')}</span>
                                 <p>{prompt?.label || t('match.promptFallback')}</p>
                             </div>
-                            <button type="button" onClick={onNextPrompt}>{t('match.nextPrompt')}</button>
+                            <button
+                                className="match-journey__prompt-refresh"
+                                type="button"
+                                onClick={onNextPrompt}
+                                aria-label={t('match.nextPrompt')}
+                                title={t('match.nextPrompt')}
+                            >
+                                <RefreshIcon />
+                            </button>
                         </div>
                         {['extended', 'offline'].includes(tier) && (
                             <button className="match-journey__retry" type="button" onClick={onRetry}>
@@ -159,7 +192,8 @@ const MatchScreen = ({
                 )}
 
                 <button className="match-journey__cancel" onClick={onCancel} disabled={search?.cancelPending}>
-                    {search?.cancelPending ? t('match.cancelling') : (isOffer ? t('match.cancelMatch') : t('match.cancel'))}
+                    {!search?.cancelPending && <CancelIcon />}
+                    <span>{search?.cancelPending ? t('match.cancelling') : (isOffer ? t('match.cancelMatch') : t('match.cancel'))}</span>
                 </button>
             </section>
         </main>

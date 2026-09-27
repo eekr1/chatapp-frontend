@@ -54,8 +54,9 @@
         subtitle: 'Global anonim birebir sohbet'
     },
     home: {
-        productPromise: 'Global rastgele birebir sohbette diger kullaniciya anonim kal. Istersen sohbetten sonra arkadas olup kalici mesajlasmaya gec.',
-        servicePrivacy: 'Anonimlik kullanicilar arasindadir. TalkX, hizmeti sunmak ve guvenligi saglamak icin verileri Gizlilik Politikasi kapsaminda isler.',
+        productPromise: 'Anonim tanış. İstersen sohbetini arkadaşlığa taşı.',
+        servicePrivacy: 'Güvenliğin ve hizmetin işleyişi için veriler işlenir.',
+        privacyShort: 'Gizlilik Politikası',
         anonymous: 'ANONIM',
         anonymousNote: 'Gecici mesajlar; fotograf yok.',
         friends: 'ARKADASLAR',
@@ -222,13 +223,13 @@
         retry: 'Aramayi yeniden baslat',
         searchConflict: 'Baska bir arama zaten aktif. Geri yuklemek icin yeniden baglan.',
         scope: {
-            label: 'Kiminle tanismak istersin?',
+            label: 'Kiminle tanışmak istersin?',
             global: 'Global',
             country: '{country}',
-            myCountry: 'Ulkem',
-            unavailable: 'Ulke eslesmesi henuz kullanilamiyor. Global secenegi acik.',
-            switching: 'Arama alani degistiriliyor...',
-            failed: 'Arama alani degistirilemedi. Onceki araman devam ediyor.',
+            myCountry: 'Ülkem',
+            unavailable: 'Ülkem yakında kullanılabilir.',
+            switching: 'Arama alanı değiştiriliyor...',
+            failed: 'Arama alanı değiştirilemedi. Önceki araman devam ediyor.',
             fallback: 'Bu arama biraz uzun suruyor. Burada devam edebilir veya acikca Global secebilirsin.',
             goGlobal: 'Global aramaya gec',
             continueCountry: 'Burada aramaya devam et'

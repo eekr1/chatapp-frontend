@@ -54,8 +54,9 @@
         subtitle: 'Global anonymous one-on-one chat'
     },
     home: {
-        productPromise: 'Stay anonymous to the other person in a random global one-on-one chat. If you both choose, become friends and continue with persistent messaging.',
-        servicePrivacy: 'Anonymity is between users. TalkX processes data under its Privacy Policy to provide and protect the service.',
+        productPromise: 'Meet anonymously. If it feels right, carry the conversation into friendship.',
+        servicePrivacy: 'Data is processed to keep the service safe and working.',
+        privacyShort: 'Privacy Policy',
         anonymous: 'ANONYMOUS',
         anonymousNote: 'Temporary messages; photos are disabled.',
         friends: 'FRIENDS',
@@ -226,7 +227,7 @@
             global: 'Global',
             country: '{country}',
             myCountry: 'My country',
-            unavailable: 'Your country is not available for matching yet. Global remains available.',
+            unavailable: 'My country will be available soon.',
             switching: 'Changing search area...',
             failed: 'The search area could not be changed. Your previous search continues.',
             fallback: 'This search is taking longer. You can keep searching here or explicitly switch to Global.',

@@ -116,6 +116,7 @@ const ChatScreen = ({
     const [, setPresenceClock] = useState(0);
     const [randomName] = useState(() => COOL_NAMES[Math.floor(Math.random() * COOL_NAMES.length)]);
     const endRef = useRef(null);
+    const composerRef = useRef(null);
     const cameraInputRef = useRef(null);
     const galleryInputRef = useRef(null);
     const mediaMenuRef = useRef(null);
@@ -222,6 +223,22 @@ const ChatScreen = ({
         if (onTyping) onTyping();
     };
 
+    const handleComposerKeyDown = (event) => {
+        if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent?.isComposing) return;
+        event.preventDefault();
+        handleSubmit(event);
+    };
+
+    useEffect(() => {
+        const composer = composerRef.current;
+        if (!composer) return;
+        const maxHeight = 128;
+        composer.style.height = 'auto';
+        const nextHeight = Math.min(composer.scrollHeight, maxHeight);
+        composer.style.height = Math.max(nextHeight, 24) + 'px';
+        composer.style.overflowY = composer.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    }, [inputValue]);
+
     const submitImageDataUrl = (dataUrl, explicitBytes = null) => {
         if (!onSendImage || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
             setImageError(t('chat.invalidImage'));
@@ -311,16 +328,38 @@ const ChatScreen = ({
                             {t('chat.addFriend')}
                         </button>
                     )}
-                    <button ref={reportButtonRef} type="button" onClick={() => setReportOpen(true)} title={t('chat.report')} aria-label={t('chat.report')} className="chat-report-btn">
-                        <ReportIcon /><span>{t('chat.report')}</span>
+                    <button
+                        ref={reportButtonRef}
+                        type="button"
+                        onClick={() => setReportOpen(true)}
+                        title={t('chat.report')}
+                        aria-label={t('chat.report')}
+                        data-tooltip={t('chat.report')}
+                        className="chat-header-action is-report"
+                    >
+                        <ReportIcon /><span className="sr-only">{t('chat.report')}</span>
                     </button>
                     {onBlock && (
-                        <button type="button" onClick={onBlock} title={t('chat.block')} className="chat-block-btn">
-                            <BlockIcon /><span>{t('chat.block')}</span>
+                        <button
+                            type="button"
+                            onClick={onBlock}
+                            title={t('chat.block')}
+                            aria-label={t('chat.block')}
+                            data-tooltip={t('chat.block')}
+                            className="chat-header-action is-block"
+                        >
+                            <BlockIcon /><span className="sr-only">{t('chat.block')}</span>
                         </button>
                     )}
-                    <button onClick={onLeave} title={t('chat.leave')} className="chat-leave-btn">
-                        <LeaveIcon /><span>{t('chat.leave')}</span>
+                    <button
+                        type="button"
+                        onClick={onLeave}
+                        title={t('chat.leave')}
+                        aria-label={t('chat.leave')}
+                        data-tooltip={t('chat.leave')}
+                        className="chat-header-action is-leave"
+                    >
+                        <LeaveIcon /><span className="sr-only">{t('chat.leave')}</span>
                     </button>
                 </div>
             </div>
@@ -507,7 +546,7 @@ const ChatScreen = ({
                             {promptSuggestion}
                         </button>
                     )}
-                    <GlassCard style={{ padding: 10, borderRadius: 24, display: 'flex', alignItems: 'center', gap: 10, maxWidth: 980, margin: '0 auto' }}>
+                    <GlassCard className="chat-composer">
                         {isFriendMode && (
                             <div ref={mediaMenuRef} className="chat-media-menu-wrap">
                                 {mediaMenuOpen && (
@@ -546,35 +585,24 @@ const ChatScreen = ({
                             </div>
                         )}
 
-                        <form style={{ flex: 1, display: 'flex' }} onSubmit={handleSubmit}>
-                            <input
-                                className="input-glass"
-                                style={{ flex: 1, border: 'none', padding: '10px 0', background: 'transparent' }}
+                        <form className="chat-composer__form" onSubmit={handleSubmit}>
+                            <textarea
+                                ref={composerRef}
+                                className="chat-composer__input"
+                                rows={1}
                                 placeholder={t('chat.writeMessage')}
                                 value={inputValue}
                                 onChange={handleInput}
+                                onKeyDown={handleComposerKeyDown}
                                 onBlur={onStopTyping}
                             />
                         </form>
 
                         <button
+                            type="button"
                             onClick={handleSubmit}
-                            style={{
-                                background: 'var(--primary)',
-                                border: 'none',
-                                borderRadius: '50%',
-                                width: 44,
-                                height: 44,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#000',
-                                cursor: 'pointer',
-                                boxShadow: 'var(--glow-cyan)',
-                                transition: 'transform 0.2s'
-                            }}
-                            onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.9)'; }}
-                            onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                            className="chat-composer__send"
+                            aria-label={t('common.send')}
                         >
                             <SendIcon />
                         </button>
