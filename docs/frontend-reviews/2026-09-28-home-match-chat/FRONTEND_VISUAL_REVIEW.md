@@ -9,7 +9,7 @@ Bu dosya deploy sonrası görsel inceleme bulgularını, tasarım kararlarını 
 - **Kayıt:** 7 bulgu (`HOME-001`–`HOME-004`, `MATCH-001`, `CHAT-001`–`CHAT-002`)
 - **Görsel kanıt ve referans:** 10 kalıcı ekran görüntüsü
 - **Doğrulama:** Lint, 50/50 otomatik test, production build ve masaüstü/dar ekran görsel QA başarılı
-- **Sonraki aşama:** Ayrı backend/veri işi olarak ülke eşleşmesi kaynağının belirlenmesi
+- **Sonraki aşama:** Backend deployundan sonra canlı hesapta otomatik ülke kaydı ve `Ülkem` eşleşmesi smoke testi
 - **Sınır:** Bu kapanış yalnız mevcut görsel taramayı ifade eder; yeni bir bulgu görülürse aynı dosyaya eklenebilir.
 
 ## Çalışma yöntemi
@@ -108,7 +108,7 @@ Backend, ülke eşleşmesini yalnız kullanıcının `user_match_country` tablos
 
 Kayıt yoksa, ülke kodu geçersizse veya durum `unavailable` ise `MATCH_COUNTRY_UNAVAILABLE`; kayıt stale/disputed ya da doğrulanmamışsa `MATCH_COUNTRY_STALE` dönüyor.
 
-Mevcut kod incelemesinde tabloyu oluşturan migration, kaydı okuyan servis ve backfill planlama yardımcısı mevcut; fakat normal kayıt/giriş akışında `user_match_country` tablosuna gerçek kullanıcı kaydı yazan production `INSERT/UPSERT` yolu bulunmuyor. Bu nedenle yeni veya backfill uygulanmamış hesaplarda ülke yeteneğinin kapalı kalması beklenen mevcut sonuçtur. Bu madde yalnız CSS revizyonu değildir; özelliğin gerçekten kullanılabilmesi için güvenilir ülke kaynağı ve bu tabloyu besleyen yaşam döngüsü ayrıca tamamlanmalıdır.
+İlk incelemede normal kayıt/giriş akışında `user_match_country` tablosuna gerçek kullanıcı kaydı yazan production yolu bulunmadığı için ülke yeteneği kapalı kalıyordu. Backend `9ab004f` ile bu eksik tamamlandı: IP yalnız backend içinde çalışan yerel country-only veritabanında çözülüyor; kayıt, giriş, authenticated WebSocket ve profil akışları canonical kaydı kendiliğinden besliyor; mevcut aktif profiller başlangıç worker'ı ile toplu tamamlanıyor. Geçici çözümleme hatası daha önce doğrulanmış ülkeyi silmiyor ve IP üçüncü tarafa gönderilmiyor.
 
 #### Kabul kriterleri
 
@@ -362,8 +362,8 @@ Mesaj metni uzadığında yazma alanı yeni satır oluşturmuyor. İçerik yatay
 
 ## Ayrı backend/veri işi
 
-- [ ] Güvenilir ülke kaynağını ve güncelleme yaşam döngüsünü belirlemek.
-- [ ] `user_match_country` için production `INSERT/UPSERT` yolunu tamamlamak.
+- [x] Güvenilir ülke kaynağını ve güncelleme yaşam döngüsünü belirlemek. (`chatapp-backend` `9ab004f`; yerel `user-country` verisi, kontrollü bakım komutu)
+- [x] `user_match_country` için production `INSERT/UPSERT` yolunu tamamlamak. (`chatapp-backend` `9ab004f`)
 - [ ] Uygun kullanıcıda `countryAvailable = true` ve `Ülkem` seçiminin uçtan uca çalıştığını doğrulamak.
 
 ## Hızlı manuel kapanış checklist'i
@@ -398,8 +398,8 @@ Mesaj metni uzadığında yazma alanı yeni satır oluşturmuyor. İçerik yatay
 - [x] Anonim eşleşme, arkadaş listesi/sohbeti, geri dönüş ve çıkış akışlarında yeni hata yok.
 - [x] Tarayıcı konsolunda yeni hata görünmüyor.
 
-> Not: Ülke eşleşmesinin gerçekten aktif olması bu frontend kapanışının dışında kalan backend/veri işidir. Bu turda beklenen durum, `Ülkem` seçeneğinin doğru ve anlaşılır biçimde pasif görünmesidir.
+> Not: Backend/veri uygulaması `9ab004f` ile tamamlandı ve otomatik testleri geçti. Son açık kontrol, bu commit deploy edildikten sonra canlı bir hesabın gerçek bağlantı IP'siyle `countryAvailable = true` alması ve `Ülkem` kuyruğuna girebilmesidir.
 
-## Açık karar
+## Karar kaydı
 
-- Canonical ülke kaydını güvenilir biçimde üretecek production veri kaynağı ve güncelleme yaşam döngüsü backend işi öncesinde netleştirilecek.
+- Canonical ülke kaydı backend içinde, dış servise IP göndermeyen yerel `user-country` verisiyle üretilecek. Veri paketi kontrollü bakım komutuyla yenilenecek; production çalışma anında otomatik indirme yapılmayacak. Uygulama: `chatapp-backend` `9ab004f`.
