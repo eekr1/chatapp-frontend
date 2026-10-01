@@ -11,7 +11,7 @@
   "backendHosts": [
     "chatapp-backend-qvk5.onrender.com"
   ],
-  "backendSourceCommit": "b5b3807356ca565315ce99b9eac4d566bd17ad80",
+  "backendSourceCommit": "dce2ff5907e752a9bdc166a777d1d25a3f1b479e",
   "frontendSourceBranch": "sale-release",
   "backendContract": {
     "minimum": 1,
