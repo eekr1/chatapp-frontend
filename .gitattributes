@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Internal visual review evidence is not part of buyer source exports.
+docs/frontend-reviews/ export-ignore
+docs/templates/ export-ignore
