@@ -26,18 +26,17 @@ Varsayılan geliştirme adresi Vite tarafından terminalde gösterilir. `.env` i
 | `VITE_API_URL` | Evet | Backend HTTP(S) taban adresi |
 | `VITE_WS_URL` | Hayır | WebSocket adresi; boşsa API URL'sinden türetilir |
 
-## Kalite ve build
+## Production build
 
 ```powershell
-npm run quality:all
 npm run build
 ```
 
-`quality:all`; politika öz testi, çekirdek/kritik testler, ESLint, production build ve yüksek önem düzeyindeki production dependency audit adımlarını çalıştırır.
+Satış öncesi test ve kabul kanıtları kaynak arşivinden ayrı olarak due-diligence dosyalarında tutulur.
 
 ## Android
 
-Canonical Android proje kaynağı bu repository altındaki `android/` klasörüdür. Release niyeti `release/talkx-release.json` dosyasında tutulur.
+Canonical Android proje kaynağı bu repository altındaki `android/` klasörüdür. Uygulama kimliği `com.talkx.app`, release metadata kaynağı `release/talkx-release.json` dosyasıdır.
 
 ```powershell
 npm run mobile:version:check
@@ -45,26 +44,19 @@ npm run mobile:prepare:android
 npm run mobile:verify:android-assets
 ```
 
-Tam iç release doğrulama akışı:
-
-```powershell
-npm run mobile:release:package
-```
-
-Bu komutun ürettiği kısa ömürlü imzalı internal RC, Play upload key kullanmaz ve Google Play'e yüklenmez. Resmî mağaza paketi ve imza süreci için `docs/ANDROID_RELEASE_RUNBOOK.md` izlenir.
+Resmî mağaza paketi Android Studio üzerinden `release` varyantıyla hazırlanır. Play upload key ve parolaları kaynak arşivine dahil değildir; resmî Play transferi sırasında mevcut imza zinciri korunur.
 
 ## Önemli yollar
 
 - `src/`: React uygulaması ve ürün akışları
 - `public/`: statik varlıklar ve release metadata
-- `test/`: Node tabanlı kontrat/regresyon testleri
-- `scripts/`: kalite ve Android release otomasyonu
+- `scripts/`: ürün ve Android release yardımcıları
 - `android/`: Capacitor Android projesi
-- `docs/`: ürün, görsel QA ve release rehberleri
+- `release/`: sürüm metadata kaynağı
 
 ## Deploy
 
-Web istemcisi Render Static Site üzerinde `npm ci && npm run build` komutuyla derlenir; yayın dizini `dist` olur. SPA deep-link yönlendirmesi `/* -> /index.html` olarak yapılandırılır. Klasik Render Static Site kullanılıyorsa dashboard yönlendirmesi için `RENDER_CLASSIC_STATIC_FIX.md` dosyasına bakın.
+Web istemcisi Render Static Site üzerinde `npm ci && npm run build` komutuyla derlenir; yayın dizini `dist` olur. SPA deep-link yönlendirmesi `/* -> /index.html` olarak yapılandırılır.
 
 ## Güvenlik ve devir
 
@@ -73,3 +65,4 @@ Web istemcisi Render Static Site üzerinde `npm ci && npm run build` komutuyla d
 - Resmî Play transferi tamamlanmadan uygulama kimliği veya imza zinciri değiştirilmez.
 
 Doğrudan bağımlılık lisans özeti için `THIRD_PARTY_NOTICES.md` dosyasına bakın.
+Kaynak arşivinin kapsamı için `SOURCE_PACKAGE_NOTE.md` dosyasına bakın.

@@ -1,6 +1,15 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
-# Internal visual review evidence is not part of buyer source exports.
-docs/frontend-reviews/ export-ignore
-docs/templates/ export-ignore
+# Buyer source exports contain the runnable product source, not internal
+# engineering history, review evidence, CI gates, or regression suites.
+.gitattributes export-ignore
+.github/ export-ignore
+docs/ export-ignore
+test/ export-ignore
+android/app/src/test/ export-ignore
+android/app/src/androidTest/ export-ignore
+QUALITY_GATES.md export-ignore
+RENDER_CLASSIC_STATIC_FIX.md export-ignore
+scripts/quality-gate.mjs export-ignore
+generate_sound.cjs export-ignore
