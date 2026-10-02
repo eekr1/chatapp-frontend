@@ -12,11 +12,15 @@ dist
 dist-ssr
 artifacts
 *.local
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
+android/gradle/gradle-daemon-jvm.properties
 .DS_Store
 *.suo
 *.ntvs*
